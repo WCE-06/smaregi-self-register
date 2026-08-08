@@ -4,12 +4,50 @@
  * このファイルには秘密鍵や操作権限付きURLを記載しない。
  */
 const GAS_UI_TOKEN = window.GAS_UI_TOKEN;
+const GAS_API_URL = window.GAS_API_URL || '';
 
 window.RegisterBridge = (() => {
   const TERMINAL_STATUSES = new Set(['COMPLETED', 'ERROR', 'NOT_FOUND']);
 
   function available() {
+    return nativeAvailable() || remoteAvailable();
+  }
+
+  function nativeAvailable() {
     return !!(window.google && google.script && google.script.run);
+  }
+
+  function remoteAvailable() {
+    return !!(GAS_API_URL && GAS_UI_TOKEN);
+  }
+
+  function remoteCall(action, payload) {
+    if (!remoteAvailable()) return Promise.reject(new Error('REMOTE_API_NOT_CONFIGURED'));
+    return new Promise((resolve, reject) => {
+      const callback = '__gasUiCallback_' + Date.now() + '_' + Math.random().toString(36).slice(2);
+      const script = document.createElement('script');
+      const timer = setTimeout(() => finish(new Error('REMOTE_API_TIMEOUT')), 20000);
+      function finish(error, value) {
+        clearTimeout(timer);
+        delete window[callback];
+        script.remove();
+        error ? reject(error) : resolve(value);
+      }
+      window[callback] = response => {
+        if (!response || response.ok !== true) {
+          finish(new Error(String(response && response.error || 'REMOTE_API_ERROR')));
+          return;
+        }
+        finish(null, response.result);
+      };
+      script.onerror = () => finish(new Error('REMOTE_API_NETWORK_ERROR'));
+      const query = new URLSearchParams({
+        api:'ui', action:String(action), uiToken:String(GAS_UI_TOKEN),
+        callback:callback, payload:JSON.stringify(payload || {})
+      });
+      script.src = GAS_API_URL + (GAS_API_URL.includes('?') ? '&' : '?') + query.toString();
+      document.head.appendChild(script);
+    });
   }
 
   function createBusinessKey() {
@@ -28,6 +66,7 @@ window.RegisterBridge = (() => {
         missing:[]
       });
     }
+    if (!nativeAvailable()) return remoteCall('readiness', {requiredPoints:requiredPoints || []});
     return new Promise((resolve, reject) => {
       google.script.run
         .withSuccessHandler(resolve)
@@ -48,6 +87,7 @@ window.RegisterBridge = (() => {
     if (!available()) {
       return Promise.resolve({ok:true, id:'LOCAL-PREVIEW', duplicate:false, preview:true});
     }
+    if (!nativeAvailable()) return remoteCall('enqueue', {form});
     return new Promise((resolve, reject) => {
       google.script.run
         .withSuccessHandler(resolve)
@@ -58,6 +98,7 @@ window.RegisterBridge = (() => {
 
   function cancel(businessKey) {
     if (!available()) return Promise.resolve({ok:true,id:'LOCAL-CANCEL',duplicate:false,preview:true});
+    if (!nativeAvailable()) return remoteCall('cancel', {businessKey:String(businessKey || createBusinessKey())});
     return new Promise((resolve, reject) => {
       google.script.run
         .withSuccessHandler(resolve)
@@ -68,6 +109,7 @@ window.RegisterBridge = (() => {
 
   function products() {
     if (!available()) return Promise.resolve({products:[], sync:{state:'LOCAL_PREVIEW'}});
+    if (!nativeAvailable()) return remoteCall('products', {});
     return new Promise((resolve, reject) => {
       google.script.run
         .withSuccessHandler(resolve)
@@ -78,6 +120,7 @@ window.RegisterBridge = (() => {
 
   function member(memberCode) {
     if (!available()) return Promise.resolve({found:true, code:'LOCAL_PREVIEW', memberCode:String(memberCode || '')});
+    if (!nativeAvailable()) return remoteCall('member', {memberCode:String(memberCode || '')});
     return new Promise((resolve, reject) => {
       google.script.run
         .withSuccessHandler(resolve)
@@ -88,6 +131,7 @@ window.RegisterBridge = (() => {
 
   function getStatus(jobId) {
     if (!available()) return Promise.resolve({id:jobId, status:'COMPLETED', result:'LOCAL_PREVIEW'});
+    if (!nativeAvailable()) return remoteCall('status', {jobId:String(jobId || '')});
     return new Promise((resolve, reject) => {
       google.script.run
         .withSuccessHandler(resolve)
