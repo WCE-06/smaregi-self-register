@@ -14,7 +14,7 @@ GAS Web UI
 
 ## このリポジトリの役割
 
-このリポジトリをGAS側ソースの正本として使用します。実行環境はGoogle Apps Scriptです。GitHub Pagesへそのまま公開する構成ではありません。
+このリポジトリをソースの正本として使用します。顧客画面はGitHub Pages、会員照会・商品同期・命令キューはGoogle Apps Scriptで実行します。
 
 - `Index.html`：顧客用セルフレジ画面
 - `Admin.html`：商品同期管理画面
@@ -22,6 +22,8 @@ GAS Web UI
 - `Code.gs`：会員照会、商品同期、命令キュー、接続状態管理
 - `appsscript.json`：GASマニフェスト
 - `WINDOWS_HEARTBEAT_CONTRACT.md`：Windowsとの状態連携仕様
+- `docs/index.html`：GitHub Pagesで配信する顧客画面
+- `docs/ClientBridge.js`：GitHub PagesとGAS UI APIの接続層
 
 ## 現在の設計
 
@@ -44,6 +46,8 @@ GAS Web UI
 - `SMAREGI_CLIENT_ID`
 - `SMAREGI_CLIENT_SECRET`
 - 操作権限付き公開URL
+
+GitHub PagesのソースにはUIトークンを埋め込みません。テスト時は公開URLの`uiToken`パラメータで渡します。
 
 ## スマレジ商品タグ
 
@@ -69,4 +73,3 @@ GAS Web UI
 3. GASプロジェクトへ対象ファイルを反映する。
 4. 新しいGASバージョンをデプロイする。
 5. 接続状態、会員認証、商品登録、取消を安全画面で確認する。
-
