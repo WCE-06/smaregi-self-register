@@ -196,7 +196,7 @@ function enqueueScenario(form, uiToken) {
   });
   if (form.finishAction) steps.push({type:'POINT', name:form.finishAction});
   if (form.secondaryAction) {
-    steps.push({type:'WAIT', ms:2000});
+    steps.push({type:'WAIT', ms:waits.betweenPaymentActionsMs});
     steps.push({type:'POINT', name:form.secondaryAction});
   }
   if (steps.length > 100) throw new Error('操作数が上限を超えています');
@@ -235,9 +235,9 @@ function enqueueCancelScenario(businessKey, uiToken) {
     id:Utilities.getUuid(),businessKey:key,version:2,waitProfile:'POINT_WAIT_V2',requiredPoints:requiredPoints,
     steps:[
       {type:'POINT',name:'取引取消ボタン'},
-      {type:'WAIT',ms:2000},
+      {type:'WAIT',ms:waitValue_('WAIT_AFTER_CANCEL_MS',1500)},
       {type:'POINT',name:'取引取消確認ボタン'},
-      {type:'WAIT',ms:2000}
+      {type:'WAIT',ms:waitValue_('WAIT_AFTER_CANCEL_CONFIRM_MS',1500)}
     ]
   };
   const lock = LockService.getScriptLock();
@@ -599,8 +599,25 @@ function waitProfile_() {
   const status = readBridgeStatus_();
   const modern = !!(status && Number(status.protocolVersion) >= 2 && status.pointWaitHandled === true);
   return modern
-    ? {mode:'POINT_WAIT_V2', afterMemberSearchMs:2000, afterForcedNoMs:3000, afterProductMs:2000}
-    : {mode:'LEGACY_TOTAL_WAIT', afterMemberSearchMs:10500, afterForcedNoMs:11500, afterProductMs:2000};
+    ? {
+        mode:'POINT_WAIT_V2',
+        afterMemberSearchMs:waitValue_('WAIT_AFTER_MEMBER_SEARCH_MS',1500),
+        afterForcedNoMs:waitValue_('WAIT_AFTER_FORCED_NO_MS',2000),
+        afterProductMs:waitValue_('WAIT_AFTER_PRODUCT_MS',1200),
+        betweenPaymentActionsMs:waitValue_('WAIT_BETWEEN_PAYMENT_ACTIONS_MS',1500)
+      }
+    : {
+        mode:'LEGACY_TOTAL_WAIT',
+        afterMemberSearchMs:10500,
+        afterForcedNoMs:11500,
+        afterProductMs:2000,
+        betweenPaymentActionsMs:2000
+      };
+}
+
+function waitValue_(propertyName, fallback) {
+  const value = Number(property_(propertyName, String(fallback)));
+  return Number.isFinite(value) ? Math.max(300, Math.min(30000, Math.round(value))) : fallback;
 }
 
 function requiredPointsFor_(form) {
