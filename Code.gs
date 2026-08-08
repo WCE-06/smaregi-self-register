@@ -273,6 +273,7 @@ function getCustomerProducts(uiToken) {
   const products = rows.map(row => {
     const code = String(row[1] || '');
     const config = menuConfigs[code] || {};
+    const kitchenAsset = aozoraKitchenAsset_(String(row[2] || ''));
     let optionGroups = [];
     try { optionGroups = config.optionGroupsJson ? JSON.parse(config.optionGroupsJson) : []; } catch (error) {}
     return {
@@ -283,19 +284,53 @@ function getCustomerProducts(uiToken) {
     categoryId:String(row[4] || ''),
     tag:String(row[5] || ''),
     displaySequence:Number(row[6] || 0),
-    section:String(config.section || (String(row[7] || 'shop') === 'shop' && row[14] ? 'kitchen' : row[7]) || 'shop'),
+    section:String(config.section || (kitchenAsset ? 'kitchen' : row[7]) || 'shop'),
     barcode:row[8] === true,
     icon:String(row[9] || '🛍️'),
     basePrice:Number(row[10] || row[3] || 0),
     taxDivision:String(row[11] == null ? '0' : row[11]),
     taxRate:Number(row[12] == null || row[12] === '' ? 10 : row[12]),
     priceLabel:String(row[13] || '税込'),
-    imageUrl:String(config.imageUrl || row[14] || ''),
+    imageUrl:String(config.imageUrl || kitchenAsset || row[14] || ''),
     description:String(config.description || row[15] || ''),
     optionGroups:optionGroups,
     available:config.available !== false
   };}).filter(product => product.code && product.name && product.available);
   return {products:products, sync:readProductSyncStatus_()};
+}
+
+function aozoraKitchenAsset_(productName) {
+  const base = 'https://self-service-resources.smaregi.app/production/skgp650g5/layout_menu_items/product_images/';
+  const normalized = String(productName || '').replace(/[\s　]+/g, '').toLowerCase();
+  const assets = {
+    'にんにくからあげ':'product_image_1777537176_1689466785.jpg',
+    '相盛りからあげ':'product_image_1777537191_82431848.jpg',
+    '和風からあげ':'product_image_1777537125_530876683.jpg',
+    'ふりふりポテトしお':'product_image_1777537291_807228877.jpg',
+    'ふりふりポテトコンソメ':'product_image_1777537363_1295913909.jpg',
+    'ふりふりポテトバターしょうゆ':'product_image_1777537372_1468858727.jpg',
+    'チーズドッグケチャップ＆マスタード':'product_image_1777537807_830015385.jpg',
+    'チーズドッグハニー＆マスタード':'product_image_1777537798_112444847.jpg',
+    '磯辺揚げ':'product_image_1777781666_479182187.jpg',
+    '揚げたこ焼':'product_image_1777783990_1970817271.jpg',
+    'フライドチキン':'product_image_1784229926_737350989.jpg',
+    '贅沢ポテトボロネーゼ風':'product_image_1777540000_1989080340.jpg',
+    '贅沢ポテトカルボナーラ風':'product_image_1777539992_61798126.jpg',
+    '和風からあげ丼':'product_image_1777537949_38733724.jpg',
+    'にんにくからあげ丼':'product_image_1777537963_985687319.jpg',
+    '相盛りからあげ丼':'product_image_1777537978_1559150914.jpg',
+    '角煮丼':'product_image_1777539010_1442682524.jpg',
+    'カツ丼':'product_image_1777538995_1144950376.jpg',
+    '卵かけご飯':'product_image_1783832607_1801925729.jpg',
+    '濃厚魚介つけ麺':'product_image_1777539105_860198633.jpg',
+    'きつねうどん':'product_image_1783832528_8625086.jpg',
+    'かけうどん':'product_image_1783832857_763744818.jpg',
+    'ほうとう':'product_image_1777790021_1024900588.jpg',
+    'ボロネーゼパスタ':'product_image_1784300708_1605368157.jpg',
+    'カルボナーラパスタ':'product_image_1783832848_491620697.jpg',
+    '温泉卵':'product_image_1777790570_1785587093.jpg'
+  };
+  return assets[normalized] ? base + assets[normalized] : '';
 }
 
 function verifyMemberCode(memberCode, uiToken) {
