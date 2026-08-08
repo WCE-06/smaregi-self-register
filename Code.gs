@@ -272,20 +272,24 @@ function getCustomerProducts(uiToken) {
   const menuConfigs = readMenuConfigMap_();
   const products = rows.map(row => {
     const code = String(row[1] || '');
+    const productName = String(row[2] || '');
+    const categoryId = String(row[4] || '');
     const config = menuConfigs[code] || {};
-    const kitchenAsset = aozoraKitchenAsset_(String(row[2] || ''));
-    const cocktailRecipe = aozoraCocktailRecipe_(String(row[2] || ''));
+    const kitchenAsset = aozoraKitchenAsset_(productName);
+    const isAozoraCategory = categoryId === '32' || categoryId === '33';
+    const isMocktail = /モクテル|ノンアル/.test(productName);
+    const cocktailRecipe = isMocktail ? null : aozoraCocktailRecipe_(productName);
     let optionGroups = [];
     try { optionGroups = config.optionGroupsJson ? JSON.parse(config.optionGroupsJson) : []; } catch (error) {}
     return {
     productId:String(row[0] || ''),
     code:code,
-    name:String(row[2] || ''),
+    name:productName,
     price:Number(row[3] || 0),
-    categoryId:String(row[4] || ''),
+    categoryId:categoryId,
     tag:String(row[5] || ''),
     displaySequence:Number(row[6] || 0),
-    section:String(config.section || (kitchenAsset || cocktailRecipe ? 'kitchen' : row[7]) || 'shop'),
+    section:String(config.section || (kitchenAsset || cocktailRecipe || isAozoraCategory ? 'kitchen' : row[7]) || 'shop'),
     barcode:row[8] === true,
     icon:String(row[9] || '🛍️'),
     basePrice:Number(row[10] || row[3] || 0),
@@ -294,7 +298,7 @@ function getCustomerProducts(uiToken) {
     priceLabel:String(row[13] || '税込'),
     imageUrl:String(config.imageUrl || kitchenAsset || row[14] || ''),
     description:String(config.description || row[15] || ''),
-    menuCategory:cocktailRecipe ? 'cocktail' : (kitchenAsset ? 'food' : ''),
+    menuCategory:isMocktail ? 'mocktail' : (cocktailRecipe ? 'cocktail' : (categoryId === '33' ? 'drink' : (kitchenAsset || categoryId === '32' ? 'food' : ''))),
     cocktailBase:cocktailRecipe ? cocktailRecipe.base : '',
     cocktailMixer:cocktailRecipe ? cocktailRecipe.mixer : '',
     optionGroups:optionGroups,
@@ -688,6 +692,8 @@ function normalizeSmaregiProduct_(item) {
 
   let section = 'shop';
   let icon = '🛍️';
+  const categoryId = String(item.categoryId || '');
+  if (categoryId === '32' || categoryId === '33') { section = 'kitchen'; icon = '🍴'; }
   if (tags.includes('SELFREG_KITCHEN')) { section = 'kitchen'; icon = '🍴'; }
   if (tags.includes('SELFREG_ATELIER')) { section = 'atelier'; icon = '🎨'; }
   const noBarcode = tags.includes('SELFREG_NOBARCODE');
@@ -701,7 +707,7 @@ function normalizeSmaregiProduct_(item) {
     code:code,
     name:name,
     price:displayPrice,
-    categoryId:String(item.categoryId || ''),
+    categoryId:categoryId,
     tag:String(item.tag || ''),
     displaySequence:Number(item.displaySequence || 999999999),
     section:section,
