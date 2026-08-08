@@ -283,7 +283,7 @@ function getCustomerProducts(uiToken) {
     categoryId:String(row[4] || ''),
     tag:String(row[5] || ''),
     displaySequence:Number(row[6] || 0),
-    section:String(row[7] || 'shop'),
+    section:String(config.section || (String(row[7] || 'shop') === 'shop' && row[14] ? 'kitchen' : row[7]) || 'shop'),
     barcode:row[8] === true,
     icon:String(row[9] || '🛍️'),
     basePrice:Number(row[10] || row[3] || 0),
@@ -361,7 +361,7 @@ function getProductSyncStatus(adminToken) {
 function getMenuManagementData(adminToken) {
   requireAdminToken_(adminToken);
   const result = getCustomerProducts(property_('UI_ACCESS_TOKEN', ''));
-  return {products:result.products.filter(product => product.section === 'kitchen')};
+  return {products:result.products};
 }
 
 function saveMenuProductConfig(input, adminToken) {
@@ -374,11 +374,12 @@ function saveMenuProductConfig(input, adminToken) {
   const description = String(input.description || '').trim().slice(0, 500);
   const optionGroups = validateOptionGroups_(input.optionGroups || []);
   const available = input.available !== false;
+  const section = ['shop','kitchen','atelier','hidden'].includes(String(input.section || '')) ? String(input.section) : 'shop';
   const sheet = menuConfigSheet_();
   const values = sheet.getDataRange().getValues();
   let row = 0;
   for (let i = 1; i < values.length; i++) if (String(values[i][0]) === productCode) { row = i + 1; break; }
-  const record = [productCode,imageUrl,description,JSON.stringify(optionGroups),available,new Date()];
+  const record = [productCode,imageUrl,description,JSON.stringify(optionGroups),available,new Date(),section];
   if (row) sheet.getRange(row,1,1,record.length).setValues([record]);
   else sheet.appendRow(record);
   return {ok:true, productCode:productCode};
@@ -868,7 +869,7 @@ function menuConfigSheet_() {
   const book = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('QUEUE_SPREADSHEET_ID'));
   let sheet = book.getSheetByName(MENU_CONFIG_SHEET);
   if (!sheet) sheet = book.insertSheet(MENU_CONFIG_SHEET);
-  const headers = ['productCode','imageUrl','description','optionGroupsJson','available','updatedAt'];
+  const headers = ['productCode','imageUrl','description','optionGroupsJson','available','updatedAt','section'];
   if (sheet.getLastRow() === 0) { sheet.appendRow(headers); sheet.setFrozenRows(1); }
   else sheet.getRange(1,1,1,headers.length).setValues([headers]);
   return sheet;
@@ -877,11 +878,11 @@ function menuConfigSheet_() {
 function readMenuConfigMap_() {
   const sheet = menuConfigSheet_();
   if (sheet.getLastRow() < 2) return {};
-  const values = sheet.getRange(2,1,sheet.getLastRow()-1,6).getValues();
+  const values = sheet.getRange(2,1,sheet.getLastRow()-1,7).getValues();
   const map = {};
   values.forEach(row => {
     const code = String(row[0] || '');
-    if (code) map[code] = {imageUrl:String(row[1] || ''),description:String(row[2] || ''),optionGroupsJson:String(row[3] || ''),available:row[4] !== false};
+    if (code) map[code] = {imageUrl:String(row[1] || ''),description:String(row[2] || ''),optionGroupsJson:String(row[3] || ''),available:row[4] !== false,section:String(row[6] || '')};
   });
   return map;
 }
