@@ -29,6 +29,9 @@ const ALLOWED_SECONDARY_ACTIONS = [
 
 function doGet(e) {
   const params = (e && e.parameter) || {};
+  if ((params.api || '') === 'ui') {
+    return handleUiApi_(params);
+  }
   if ((params.op || '') === 'pull') {
     if (!hasBridgeSecret_(params.secret || '')) return json_({ok:false, error:'AUTH'});
     return json_({ok:true, job:claimNextJob_()});
@@ -50,6 +53,49 @@ function doGet(e) {
   return template.evaluate()
     .setTitle('セルフレジ')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no');
+}
+
+function handleUiApi_(params) {
+  const callback = String(params.callback || '');
+  try {
+    const payload = params.payload ? JSON.parse(params.payload) : {};
+    const uiToken = String(params.uiToken || '');
+    let result;
+    switch (String(params.action || '')) {
+      case 'readiness':
+        result = getRegisterReadiness(payload.requiredPoints || [], uiToken);
+        break;
+      case 'enqueue':
+        result = enqueueScenario(payload.form || {}, uiToken);
+        break;
+      case 'cancel':
+        result = enqueueCancelScenario(String(payload.businessKey || ''), uiToken);
+        break;
+      case 'products':
+        result = getCustomerProducts(uiToken);
+        break;
+      case 'member':
+        result = verifyMemberCode(String(payload.memberCode || ''), uiToken);
+        break;
+      case 'status':
+        result = getJobStatus(String(payload.jobId || ''), uiToken);
+        break;
+      default:
+        throw new Error('INVALID_UI_ACTION');
+    }
+    return jsonp_({ok:true, result:result}, callback);
+  } catch (error) {
+    return jsonp_({ok:false, error:String(error && error.message || error)}, callback);
+  }
+}
+
+function jsonp_(value, callback) {
+  if (!/^[A-Za-z_$][0-9A-Za-z_$]*$/.test(callback)) {
+    return json_({ok:false, error:'INVALID_CALLBACK'});
+  }
+  return ContentService
+    .createTextOutput(callback + '(' + JSON.stringify(value) + ');')
+    .setMimeType(ContentService.MimeType.JAVASCRIPT);
 }
 
 function doPost(e) {
