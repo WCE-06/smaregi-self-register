@@ -274,6 +274,7 @@ function getCustomerProducts(uiToken) {
     const code = String(row[1] || '');
     const config = menuConfigs[code] || {};
     const kitchenAsset = aozoraKitchenAsset_(String(row[2] || ''));
+    const cocktailRecipe = aozoraCocktailRecipe_(String(row[2] || ''));
     let optionGroups = [];
     try { optionGroups = config.optionGroupsJson ? JSON.parse(config.optionGroupsJson) : []; } catch (error) {}
     return {
@@ -284,7 +285,7 @@ function getCustomerProducts(uiToken) {
     categoryId:String(row[4] || ''),
     tag:String(row[5] || ''),
     displaySequence:Number(row[6] || 0),
-    section:String(config.section || (kitchenAsset ? 'kitchen' : row[7]) || 'shop'),
+    section:String(config.section || (kitchenAsset || cocktailRecipe ? 'kitchen' : row[7]) || 'shop'),
     barcode:row[8] === true,
     icon:String(row[9] || '🛍️'),
     basePrice:Number(row[10] || row[3] || 0),
@@ -293,10 +294,46 @@ function getCustomerProducts(uiToken) {
     priceLabel:String(row[13] || '税込'),
     imageUrl:String(config.imageUrl || kitchenAsset || row[14] || ''),
     description:String(config.description || row[15] || ''),
+    menuCategory:cocktailRecipe ? 'cocktail' : (kitchenAsset ? 'food' : ''),
+    cocktailBase:cocktailRecipe ? cocktailRecipe.base : '',
+    cocktailMixer:cocktailRecipe ? cocktailRecipe.mixer : '',
     optionGroups:optionGroups,
     available:config.available !== false
   };}).filter(product => product.code && product.name && product.available);
   return {products:products, sync:readProductSyncStatus_()};
+}
+
+function aozoraCocktailRecipe_(productName) {
+  const name = String(productName || '').replace(/[\s　]+/g, '');
+  let base = '';
+  if (/角ハイ|\(角\)|角ロック|ウイスキー角/.test(name)) base = 'ウイスキー（角）';
+  else if (/バーボン/.test(name)) base = 'バーボン';
+  else if (/^梅酒/.test(name)) base = '梅酒';
+  else if (/麦焼酎|\(麦\)/.test(name)) base = '麦焼酎';
+  else if (/芋焼酎|\(芋\)/.test(name)) base = '芋焼酎';
+  else if (/^泡盛/.test(name)) base = '泡盛';
+  else if (/^テキーラ|メキシカン|ブレイブ/.test(name)) base = 'テキーラ';
+  else if (/^カシス/.test(name)) base = 'カシス';
+  else if (/^ストロベリー|大人のいちご/.test(name)) base = 'ストロベリー';
+  else if (/^ピーチ|レゲエパンチ|ファジーネーブル/.test(name)) base = 'ピーチ';
+  else if (/^レモン|大人のレモネード/.test(name)) base = 'レモン';
+  else if (/^カルーア|スミス・アンド・ウエッソン/.test(name)) base = 'カルーア';
+  else if (/^ビアコーク/.test(name)) base = 'ビール';
+  if (!base) return null;
+
+  let mixer = '';
+  if (/ロック|ショット|ハーフロック/.test(name)) mixer = 'ロック／ストレート';
+  else if (/ラムネ/.test(name)) mixer = 'ラムネ';
+  else if (/カルピス/.test(name)) mixer = 'カルピス';
+  else if (/ミルク|いちごミルク|ウエッソン/.test(name)) mixer = 'ミルク';
+  else if (/オレンジ|サンライズ|ファジーネーブル/.test(name)) mixer = 'オレンジ';
+  else if (/ウーロン|レゲエパンチ/.test(name)) mixer = 'ウーロン茶';
+  else if (/緑茶|グリーンティー/.test(name)) mixer = '緑茶';
+  else if (/コーク|コーラ|ブレイブ/.test(name)) mixer = 'コーラ';
+  else if (/水割り/.test(name)) mixer = '水';
+  else if (/ソーダ|ハイボール|サワー|レモネード/.test(name)) mixer = 'ソーダ';
+  if (!mixer) return null;
+  return {base:base, mixer:mixer};
 }
 
 function aozoraKitchenAsset_(productName) {
