@@ -1,5 +1,6 @@
 const QUEUE_SHEET = 'commands';
 const PRODUCT_SHEET = 'products';
+const MENU_CONFIG_SHEET = 'menu_config';
 const BRIDGE_STATUS_PROPERTY = 'BRIDGE_STATUS_JSON';
 const PRODUCT_SYNC_STATUS_PROPERTY = 'PRODUCT_SYNC_STATUS_JSON';
 const BRIDGE_STATUS_MAX_AGE_MS = 30000;
@@ -268,9 +269,15 @@ function getCustomerProducts(uiToken) {
   const sheet = productSheet_();
   if (sheet.getLastRow() < 2) return {products:[], sync:readProductSyncStatus_()};
   const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn()).getValues();
-  const products = rows.map(row => ({
+  const menuConfigs = readMenuConfigMap_();
+  const products = rows.map(row => {
+    const code = String(row[1] || '');
+    const config = menuConfigs[code] || {};
+    let optionGroups = [];
+    try { optionGroups = config.optionGroupsJson ? JSON.parse(config.optionGroupsJson) : []; } catch (error) {}
+    return {
     productId:String(row[0] || ''),
-    code:String(row[1] || ''),
+    code:code,
     name:String(row[2] || ''),
     price:Number(row[3] || 0),
     categoryId:String(row[4] || ''),
@@ -282,8 +289,12 @@ function getCustomerProducts(uiToken) {
     basePrice:Number(row[10] || row[3] || 0),
     taxDivision:String(row[11] == null ? '0' : row[11]),
     taxRate:Number(row[12] == null || row[12] === '' ? 10 : row[12]),
-    priceLabel:String(row[13] || '税込')
-  })).filter(product => product.code && product.name);
+    priceLabel:String(row[13] || '税込'),
+    imageUrl:String(config.imageUrl || row[14] || ''),
+    description:String(config.description || row[15] || ''),
+    optionGroups:optionGroups,
+    available:config.available !== false
+  };}).filter(product => product.code && product.name && product.available);
   return {products:products, sync:readProductSyncStatus_()};
 }
 
@@ -347,6 +358,55 @@ function getProductSyncStatus(adminToken) {
   };
 }
 
+function getMenuManagementData(adminToken) {
+  requireAdminToken_(adminToken);
+  const result = getCustomerProducts(property_('UI_ACCESS_TOKEN', ''));
+  return {products:result.products.filter(product => product.section === 'kitchen')};
+}
+
+function saveMenuProductConfig(input, adminToken) {
+  requireAdminToken_(adminToken);
+  if (!input || typeof input !== 'object') throw new Error('INVALID_MENU_CONFIG');
+  const productCode = String(input.productCode || '').trim();
+  if (!/^[0-9A-Za-z]+$/.test(productCode) || productCode.length > 64) throw new Error('INVALID_PRODUCT_CODE');
+  const imageUrl = String(input.imageUrl || '').trim();
+  if (imageUrl && !/^https:\/\//i.test(imageUrl)) throw new Error('IMAGE_URL_MUST_BE_HTTPS');
+  const description = String(input.description || '').trim().slice(0, 500);
+  const optionGroups = validateOptionGroups_(input.optionGroups || []);
+  const available = input.available !== false;
+  const sheet = menuConfigSheet_();
+  const values = sheet.getDataRange().getValues();
+  let row = 0;
+  for (let i = 1; i < values.length; i++) if (String(values[i][0]) === productCode) { row = i + 1; break; }
+  const record = [productCode,imageUrl,description,JSON.stringify(optionGroups),available,new Date()];
+  if (row) sheet.getRange(row,1,1,record.length).setValues([record]);
+  else sheet.appendRow(record);
+  return {ok:true, productCode:productCode};
+}
+
+function validateOptionGroups_(groups) {
+  if (!Array.isArray(groups) || groups.length > 10) throw new Error('INVALID_OPTION_GROUPS');
+  return groups.map((group, groupIndex) => {
+    const name = String(group && group.name || '').trim();
+    if (!name) throw new Error('OPTION_GROUP_NAME_REQUIRED_' + groupIndex);
+    const type = group.type === 'multiple' ? 'multiple' : 'single';
+    const choices = Array.isArray(group.choices) ? group.choices : [];
+    if (!choices.length || choices.length > 20) throw new Error('INVALID_OPTION_CHOICES_' + groupIndex);
+    return {
+      id:String(group.id || 'group_' + groupIndex).replace(/[^0-9A-Za-z_-]/g,'_').slice(0,40),
+      name:name.slice(0,60),
+      type:type,
+      required:group.required !== false,
+      choices:choices.map((choice, choiceIndex) => ({
+        id:String(choice && choice.id || 'choice_' + choiceIndex).replace(/[^0-9A-Za-z_-]/g,'_').slice(0,40),
+        name:String(choice && choice.name || '').trim().slice(0,60),
+        priceDelta:Math.max(0,Math.min(99999,Number(choice && choice.priceDelta || 0))),
+        productCode:String(choice && choice.productCode || '').trim().slice(0,64)
+      }))
+    };
+  });
+}
+
 function installProductSyncTrigger(adminToken) {
   requireAdminToken_(adminToken);
   ScriptApp.getProjectTriggers().forEach(trigger => {
@@ -362,6 +422,7 @@ function syncProducts() {
   saveProductSyncStatus_({state:'RUNNING', startedAt:startedAt.toISOString()});
   try {
     const source = fetchAllSmaregiProducts_();
+    const imageMap = fetchAllSmaregiProductImages_();
     const normalized = [];
     let excludedCount = 0;
 
@@ -371,6 +432,7 @@ function syncProducts() {
         excludedCount++;
         return;
       }
+      product.imageUrl = imageMap[product.productId] || '';
       normalized.push(product);
     });
     normalized.sort((a, b) => a.displaySequence - b.displaySequence || a.name.localeCompare(b.name, 'ja'));
@@ -382,7 +444,7 @@ function syncProducts() {
       const sheet = productSheet_();
       if (sheet.getLastRow() > 1) sheet.getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn()).clearContent();
       if (normalized.length) {
-        sheet.getRange(2, 1, normalized.length, 14).setValues(normalized.map(product => [
+        sheet.getRange(2, 1, normalized.length, 16).setValues(normalized.map(product => [
           product.productId,
           product.code,
           product.name,
@@ -396,7 +458,9 @@ function syncProducts() {
           product.basePrice,
           product.taxDivision,
           product.taxRate,
-          product.priceLabel
+          product.priceLabel,
+          product.imageUrl,
+          product.description
         ]));
       }
     } finally {
@@ -423,6 +487,32 @@ function syncProducts() {
     saveProductSyncStatus_(status);
     throw error;
   }
+}
+
+function fetchAllSmaregiProductImages_() {
+  const contractId = requiredProperty_('SMAREGI_CONTRACT_ID');
+  const apiBase = smaregiEnvironment_() === 'sandbox' ? 'https://api.smaregi.dev' : 'https://api.smaregi.jp';
+  let token = getSmaregiAccessToken_();
+  const images = {};
+  const limit = 1000;
+  for (let page = 1; page <= 100; page++) {
+    let response;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      response = UrlFetchApp.fetch(apiBase + '/' + encodeURIComponent(contractId) + '/pos/products/images?limit=' + limit + '&page=' + page, {
+        method:'get',headers:{Authorization:'Bearer ' + token},muteHttpExceptions:true
+      });
+      if (attempt === 0 && (response.getResponseCode() === 401 || response.getResponseCode() === 403)) {
+        token = getSmaregiAccessToken_(true); continue;
+      }
+      break;
+    }
+    if (response.getResponseCode() !== 200) throw new Error('SMAREGI_PRODUCT_IMAGES_HTTP_' + response.getResponseCode());
+    const items = JSON.parse(response.getContentText() || '[]');
+    if (!Array.isArray(items)) throw new Error('SMAREGI_PRODUCT_IMAGES_INVALID_RESPONSE');
+    items.forEach(item => { if (item.productId && item.url && item.url !== 'failed') images[String(item.productId)] = String(item.url); });
+    if (items.length < limit) break;
+  }
+  return images;
 }
 
 function fetchAllSmaregiProducts_() {
@@ -547,7 +637,8 @@ function normalizeSmaregiProduct_(item) {
     basePrice:basePrice,
     taxDivision:taxDivision,
     taxRate:taxRate,
-    priceLabel:taxDivision === '2' ? '非課税' : (taxExcluded ? '税込（税抜登録）' : '税込')
+    priceLabel:taxDivision === '2' ? '非課税' : (taxExcluded ? '税込（税抜登録）' : '税込'),
+    description:String(item.description || item.catchCopy || '').trim().slice(0,500)
   };
 }
 
@@ -761,7 +852,7 @@ function productSheet_() {
   const book = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('QUEUE_SPREADSHEET_ID'));
   let sheet = book.getSheetByName(PRODUCT_SHEET);
   if (!sheet) sheet = book.insertSheet(PRODUCT_SHEET);
-  const headers = ['productId','productCode','productName','price','categoryId','tag','displaySequence','section','barcode','icon','basePrice','taxDivision','taxRate','priceLabel'];
+  const headers = ['productId','productCode','productName','price','categoryId','tag','displaySequence','section','barcode','icon','basePrice','taxDivision','taxRate','priceLabel','smaregiImageUrl','description'];
   if (sheet.getLastRow() === 0) {
     sheet.appendRow(headers);
     sheet.setFrozenRows(1);
@@ -769,6 +860,30 @@ function productSheet_() {
     sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
   }
   return sheet;
+}
+
+function menuConfigSheet_() {
+  const id = PropertiesService.getScriptProperties().getProperty('QUEUE_SPREADSHEET_ID');
+  if (!id) queueSheet_();
+  const book = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('QUEUE_SPREADSHEET_ID'));
+  let sheet = book.getSheetByName(MENU_CONFIG_SHEET);
+  if (!sheet) sheet = book.insertSheet(MENU_CONFIG_SHEET);
+  const headers = ['productCode','imageUrl','description','optionGroupsJson','available','updatedAt'];
+  if (sheet.getLastRow() === 0) { sheet.appendRow(headers); sheet.setFrozenRows(1); }
+  else sheet.getRange(1,1,1,headers.length).setValues([headers]);
+  return sheet;
+}
+
+function readMenuConfigMap_() {
+  const sheet = menuConfigSheet_();
+  if (sheet.getLastRow() < 2) return {};
+  const values = sheet.getRange(2,1,sheet.getLastRow()-1,6).getValues();
+  const map = {};
+  values.forEach(row => {
+    const code = String(row[0] || '');
+    if (code) map[code] = {imageUrl:String(row[1] || ''),description:String(row[2] || ''),optionGroupsJson:String(row[3] || ''),available:row[4] !== false};
+  });
+  return map;
 }
 
 function property_(name, fallback) {
