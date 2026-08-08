@@ -1,0 +1,10 @@
+.DS_Store
+.clasp.json
+.env
+.env.*
+*.local.json
+*secret*
+*token*
+gas_bridge_config.json
+credentials.json
+service-account*.json
