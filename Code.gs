@@ -263,10 +263,14 @@ function enqueueScenario(form, uiToken) {
     steps.push({type:'ENTER'});
     steps.push({type:'WAIT', ms:waits.afterProductMs});
   });
-  if (form.finishAction) steps.push({type:'POINT', name:form.finishAction});
+  if (form.finishAction) {
+    steps.push({type:'POINT', name:form.finishAction});
+    steps.push({type:'POINT', name:'テンキー5'});
+  }
   if (form.secondaryAction) {
     steps.push({type:'WAIT', ms:waits.betweenPaymentActionsMs});
     steps.push({type:'POINT', name:form.secondaryAction});
+    steps.push({type:'POINT', name:'テンキー5'});
   }
   if (steps.length > 100) throw new Error('操作数が上限を超えています');
 
@@ -1123,6 +1127,7 @@ function requiredPointsFor_(form) {
   if (form.memberCode && form.useForcedNo) names.push('取引検索強制確認いいえボタン');
   if (form.finishAction) names.push(form.finishAction);
   if (form.secondaryAction) names.push(form.secondaryAction);
+  if (form.finishAction || form.secondaryAction) names.push('テンキー5');
   return Array.from(new Set(names));
 }
 
