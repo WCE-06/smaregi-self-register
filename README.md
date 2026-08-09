@@ -41,6 +41,9 @@ GAS Web UI
 - 取引取消時は現在の決済階層を判定し、現金は1回、キャッシュレスは1回、電子マネー階層は2回戻してから取引取消を実行する
 - 商品ジョブは会員操作の完了を待たず、会員ジョブがキューへ登録された直後に次のジョブとして予約する
 - 税抜商品は税率別の税抜小計へ税率を掛け、スマレジと同じ端数処理（既定は四捨五入）で税込合計を算出する
+- FEBBRAIOは会員コードから受付システムの利用中セッションを取得し、STN/STRの商品コード・利用時間・料金を自動反映する
+- FEBBRAIOの精算開始時にセッションを確保し、取引取消時は確保を解除する
+- FEBBRAIOの「お支払い完了・次のお客様へ」確定時だけ、同一paymentIdでPAID通知を送る
 
 ### Windows・Pico Wとの命令契約
 
@@ -72,6 +75,10 @@ GAS Web UI
 - `SMAREGI_CONTRACT_ID`
 - `SMAREGI_CLIENT_ID`
 - `SMAREGI_CLIENT_SECRET`
+- `FEBBRAIO_API_URL`
+- `FEBBRAIO_API_TOKEN`
+- `FEBBRAIO_TERMINAL_ID`
+- `FEBBRAIO_DEVICE_ID`
 - 操作権限付き公開URL
 
 GitHub PagesのソースにはUIトークンを埋め込みません。テスト時は公開URLの`uiToken`パラメータで渡します。
