@@ -128,6 +128,17 @@ window.RegisterBridge = (() => {
     });
   }
 
+  function adminLogin(password) {
+    if (!available()) return Promise.reject(new Error('ADMIN_LOGIN_UNAVAILABLE'));
+    if (!nativeAvailable()) return remoteCall('adminLogin', {password:String(password || '')});
+    return new Promise((resolve, reject) => {
+      google.script.run
+        .withSuccessHandler(resolve)
+        .withFailureHandler(error => reject(normalizeError(error)))
+        .employeeAdminLogin(String(password || ''), GAS_UI_TOKEN);
+    });
+  }
+
   function getStatus(jobId) {
     if (!available()) return Promise.resolve({id:jobId, status:'COMPLETED', result:'LOCAL_PREVIEW'});
     if (!nativeAvailable()) return remoteCall('status', {jobId:String(jobId || '')});
@@ -170,5 +181,5 @@ window.RegisterBridge = (() => {
     return normalized;
   }
 
-  return {available, createBusinessKey, readiness, products, member, enqueue, cancel, getStatus, watch, customerMessage};
+  return {available, createBusinessKey, readiness, products, member, adminLogin, enqueue, cancel, getStatus, watch, customerMessage};
 })();
