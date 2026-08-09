@@ -705,9 +705,6 @@ function fetchAllSmaregiProducts_() {
   const all = [];
   for (let page = 1; page <= 100; page++) {
     const query = [
-      'display_flag=1',
-      'division=0',
-      'sales_division=0',
       'limit=' + limit,
       'page=' + page
     ].join('&');
@@ -732,7 +729,18 @@ function fetchAllSmaregiProducts_() {
     if (pageItems.length < limit) break;
     if (page === 100) throw new Error('SMAREGI_PRODUCTS_PAGE_LIMIT');
   }
-  return all;
+  // モバイルオーダー専用商品はPOS端末で非表示（displayFlag=0）の場合がある。
+  // 非表示商品を無条件には公開せず、Aozora kitchen対象と判定できるものだけ同期する。
+  return all.filter(item => {
+    const name = String(item.productName || '');
+    const tags = String(item.tag || '').split(/[,\s]+/).map(value => value.trim().toUpperCase()).filter(Boolean);
+    const normalPosProduct = String(item.displayFlag == null ? '1' : item.displayFlag) === '1' &&
+      String(item.division == null ? '0' : item.division) === '0' &&
+      String(item.salesDivision == null ? '0' : item.salesDivision) === '0';
+    const knownKitchenProduct = tags.includes('SELFREG_KITCHEN') || Boolean(aozoraKitchenAsset_(name)) ||
+      isAozoraMenuName_(name) || Boolean(aozoraCocktailRecipe_(name));
+    return normalPosProduct || knownKitchenProduct;
+  });
 }
 
 function getSmaregiAccessToken_(forceRefresh) {
