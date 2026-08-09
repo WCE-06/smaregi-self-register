@@ -249,9 +249,9 @@ function enqueueCancelScenario(businessKey, uiToken) {
     id:Utilities.getUuid(),businessKey:key,version:2,waitProfile:'POINT_WAIT_V2',requiredPoints:requiredPoints,
     steps:[
       {type:'POINT',name:'取引取消ボタン'},
-      {type:'WAIT',ms:waitValue_('WAIT_AFTER_CANCEL_MS',1500)},
+      {type:'WAIT',ms:waitValue_('WAIT_AFTER_CANCEL_MS',800)},
       {type:'POINT',name:'取引取消確認ボタン'},
-      {type:'WAIT',ms:waitValue_('WAIT_AFTER_CANCEL_CONFIRM_MS',1500)}
+      {type:'WAIT',ms:waitValue_('WAIT_AFTER_CANCEL_CONFIRM_MS',800)}
     ]
   };
   const lock = LockService.getScriptLock();
@@ -885,10 +885,10 @@ function waitProfile_() {
   return modern
     ? {
         mode:'POINT_WAIT_V2',
-        afterMemberSearchMs:waitValue_('WAIT_AFTER_MEMBER_SEARCH_MS',1500),
-        afterForcedNoMs:waitValue_('WAIT_AFTER_FORCED_NO_MS',2000),
-        afterProductMs:waitValue_('WAIT_AFTER_PRODUCT_MS',500),
-        betweenPaymentActionsMs:waitValue_('WAIT_BETWEEN_PAYMENT_ACTIONS_MS',900)
+        afterMemberSearchMs:waitValue_('WAIT_AFTER_MEMBER_SEARCH_MS',800),
+        afterForcedNoMs:waitValue_('WAIT_AFTER_FORCED_NO_MS',1000),
+        afterProductMs:waitValue_('WAIT_AFTER_PRODUCT_MS',200),
+        betweenPaymentActionsMs:waitValue_('WAIT_BETWEEN_PAYMENT_ACTIONS_MS',400)
       }
     : {
         mode:'LEGACY_TOTAL_WAIT',
