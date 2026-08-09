@@ -25,7 +25,9 @@ window.RegisterBridge = (() => {
     return new Promise((resolve, reject) => {
       const callback = '__gasUiCallback_' + Date.now() + '_' + Math.random().toString(36).slice(2);
       const script = document.createElement('script');
-      const timer = setTimeout(() => finish(new Error('REMOTE_API_TIMEOUT')), 20000);
+      // 初回の商品マスター取得はGASのコールドスタートと全商品読込で時間がかかる。
+      // 途中で「商品なし」と誤判定しないよう、顧客画面は完了まで待機する。
+      const timer = setTimeout(() => finish(new Error('REMOTE_API_TIMEOUT')), 70000);
       function finish(error, value) {
         clearTimeout(timer);
         delete window[callback];
