@@ -505,7 +505,7 @@ function addInventoryReceipt(input, adminToken) {
   const code = String(input.productCode || '').trim();
   const quantity = Math.floor(Number(input.quantity || 0));
   const expiryDate = String(input.expiryDate || '').trim();
-  if (!/^[0-9A-Za-z]+$/.test(code) || quantity < 1 || quantity > 100000) throw new Error('INVALID_INVENTORY_INPUT');
+  if (!/^[0-9A-Za-z_-]+$/.test(code) || quantity < 1 || quantity > 100000) throw new Error('INVALID_INVENTORY_INPUT');
   if (expiryDate && !/^\d{4}-\d{2}-\d{2}$/.test(expiryDate)) throw new Error('INVALID_EXPIRY_DATE');
   const productRows = productSheet_().getDataRange().getValues();
   const productRow = productRows.slice(1).find(row => String(row[1] || '') === code);
@@ -519,7 +519,7 @@ function saveMenuProductConfig(input, adminToken) {
   requireAdminToken_(adminToken);
   if (!input || typeof input !== 'object') throw new Error('INVALID_MENU_CONFIG');
   const productCode = String(input.productCode || '').trim();
-  if (!/^[0-9A-Za-z]+$/.test(productCode) || productCode.length > 64) throw new Error('INVALID_PRODUCT_CODE');
+  if (!/^[0-9A-Za-z_-]+$/.test(productCode) || productCode.length > 64) throw new Error('INVALID_PRODUCT_CODE');
   const imageUrl = String(input.imageUrl || '').trim();
   if (imageUrl && !/^https:\/\//i.test(imageUrl)) throw new Error('IMAGE_URL_MUST_BE_HTTPS');
   const description = String(input.description || '').trim().slice(0, 500);
@@ -553,7 +553,7 @@ function saveMenuLayout(entries, adminToken) {
   entries.forEach((entry,index) => {
     const code = String(entry && entry.productCode || '').trim();
     const category = String(entry && entry.menuCategory || '');
-    if (!/^[0-9A-Za-z]+$/.test(code) || !allowedCategories.includes(category)) throw new Error('INVALID_MENU_LAYOUT_ENTRY_' + index);
+    if (!/^[0-9A-Za-z_-]+$/.test(code) || !allowedCategories.includes(category)) throw new Error('INVALID_MENU_LAYOUT_ENTRY_' + index);
     const order = Math.max(0, Math.min(999999, Math.floor(Number(entry.displayOrder || 0))));
     const existingRow = rowMap[code];
     if (existingRow) {
@@ -799,7 +799,7 @@ function getSmaregiCustomerAccessToken_(forceRefresh) {
 function normalizeSmaregiProduct_(item) {
   const code = String(item.productCode || '').trim();
   const name = String(item.productName || '').trim();
-  if (!code || !name || !/^[0-9A-Za-z]+$/.test(code) || code.length > 64) return null;
+  if (!code || !name || !/^[0-9A-Za-z_-]+$/.test(code) || code.length > 64) return null;
   const tags = String(item.tag || '').split(/[,\s]+/).map(value => value.trim().toUpperCase()).filter(Boolean);
   if (tags.includes('SELFREG_HIDDEN')) return null;
 
@@ -916,10 +916,11 @@ function requiredPointsFor_(form) {
 function validateForm_(form) {
   if (!form || typeof form !== 'object') throw new Error('入力内容が不正です');
   const alphaNum = /^[0-9A-Za-z]+$/;
+  const productCodePattern = /^[0-9A-Za-z_-]+$/;
   if (form.memberCode && (!alphaNum.test(form.memberCode) || form.memberCode.length > 64)) throw new Error('会員コードが不正です');
   if (!Array.isArray(form.productCodes) || form.productCodes.length > 30) throw new Error('商品コード数が不正です');
   form.productCodes.forEach(value => {
-    if (!alphaNum.test(value) || value.length > 64) throw new Error('商品コードが不正です');
+    if (!productCodePattern.test(value) || value.length > 64) throw new Error('商品コードが不正です');
   });
   if (!ALLOWED_FINISH_ACTIONS.includes(form.finishAction || '')) throw new Error('終了操作が不正です');
   if (!ALLOWED_SECONDARY_ACTIONS.includes(form.secondaryAction || '')) throw new Error('追加操作が不正です');
