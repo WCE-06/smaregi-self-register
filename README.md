@@ -36,6 +36,7 @@ GAS Web UI
 - POINT後の滞留待機はWindows、画面遷移待機はGASが担当
 - TYPEは`[0-9A-Za-z_-]{1,64}`に対応し、Windowsが成功後に1500msの入力安定化待ちを担当
 - GASはTYPEとENTERの間へWAITを追加せず、ENTER後のスマレジ画面処理待ちだけを担当
+- 顧客画面のジョブ完了確認は500ms間隔で行い、商品登録完了後の余分な画面待ちを抑える
 
 ### Windows・Pico Wとの命令契約
 
