@@ -263,7 +263,7 @@ function enqueueCancelScenario(businessKey, uiToken, context) {
     steps.push({
       type:'WAIT',
       ms:isLastPaymentCancel
-        ? waitValue_('WAIT_AFTER_PAYMENT_CANCEL_MS',3000)
+        ? waitValue_('WAIT_AFTER_PAYMENT_CANCEL_MS',5000)
         : waitValue_('WAIT_BETWEEN_PAYMENT_ACTIONS_MS',800)
     });
   });
