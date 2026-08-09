@@ -173,7 +173,7 @@ function getRegisterReadiness(requiredPoints, uiToken) {
     return readiness_(false, 'COORDINATES_MISSING', 'このお支払い方法は現在準備中です', status, requiredMissing);
   }
   if (status.coordinates && status.coordinates.ready === false && required.length) {
-    return readiness_(false, 'COORDINATES_NOT_READY', 'レジ画面の設定を確認しています', status, missing);
+    return readiness_(false, 'COORDINATES_NOT_READY', 'ただいまお会計の準備をしています', status, missing);
   }
   return readiness_(true, 'READY', 'Windows PCとレジ端末の接続は正常です', status);
 }
@@ -885,7 +885,7 @@ function waitProfile_() {
   return modern
     ? {
         mode:'POINT_WAIT_V2',
-        afterMemberSearchMs:waitValue_('WAIT_AFTER_MEMBER_SEARCH_MS',800),
+        afterMemberSearchMs:waitValue_('WAIT_AFTER_MEMBER_SEARCH_MS',1300),
         afterForcedNoMs:waitValue_('WAIT_AFTER_FORCED_NO_MS',1000),
         afterProductMs:waitValue_('WAIT_AFTER_PRODUCT_MS',200),
         betweenPaymentActionsMs:waitValue_('WAIT_BETWEEN_PAYMENT_ACTIONS_MS',400)
