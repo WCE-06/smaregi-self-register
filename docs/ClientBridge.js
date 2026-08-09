@@ -132,6 +132,21 @@ window.RegisterBridge = (() => {
     });
   }
 
+  function febbraioCall(action, payload, nativeMethod, args) {
+    if (!available()) return Promise.reject(new Error('FEBBRAIO_API_UNAVAILABLE'));
+    if (!nativeAvailable()) return remoteCall(action, payload);
+    return new Promise((resolve, reject) => {
+      const runner = google.script.run.withSuccessHandler(resolve).withFailureHandler(error => reject(normalizeError(error)));
+      runner[nativeMethod](...(args || []), GAS_UI_TOKEN);
+    });
+  }
+
+  function febbraioCharge(memberCode) { return febbraioCall('febbraioCharge', {memberCode:String(memberCode || '')}, 'getFebbraioCheckoutCharge', [String(memberCode || '')]); }
+  function febbraioClaim(sessionId, businessKey) { return febbraioCall('febbraioClaim', {sessionId:String(sessionId || ''),businessKey:String(businessKey || '')}, 'claimFebbraioCheckout', [String(sessionId || ''),String(businessKey || '')]); }
+  function febbraioRelease(sessionId) { return febbraioCall('febbraioRelease', {sessionId:String(sessionId || '')}, 'releaseFebbraioCheckout', [String(sessionId || '')]); }
+  function febbraioComplete(sessionId, paymentId) { return febbraioCall('febbraioComplete', {sessionId:String(sessionId || ''),paymentId:String(paymentId || '')}, 'completeFebbraioPayment', [String(sessionId || ''),String(paymentId || '')]); }
+  function febbraioStatus(sessionId) { return febbraioCall('febbraioStatus', {sessionId:String(sessionId || '')}, 'getFebbraioPaymentStatus', [String(sessionId || '')]); }
+
   function adminLogin(password) {
     if (!available()) return Promise.reject(new Error('ADMIN_LOGIN_UNAVAILABLE'));
     if (!nativeAvailable()) return remoteCall('adminLogin', {password:String(password || '')});
@@ -185,5 +200,5 @@ window.RegisterBridge = (() => {
     return normalized;
   }
 
-  return {available, createBusinessKey, readiness, products, member, adminLogin, enqueue, cancel, getStatus, watch, customerMessage};
+  return {available, createBusinessKey, readiness, products, member, febbraioCharge, febbraioClaim, febbraioRelease, febbraioComplete, febbraioStatus, adminLogin, enqueue, cancel, getStatus, watch, customerMessage};
 })();
