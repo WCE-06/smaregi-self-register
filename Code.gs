@@ -148,13 +148,13 @@ function febbraioFetch_(path, options) {
   request.muteHttpExceptions = true;
   const response = UrlFetchApp.fetch(base + String(path || ''), request);
   const status = response.getResponseCode();
-  let body;
-  try { body = JSON.parse(response.getContentText() || '{}'); }
-  catch (ignored) { throw new Error('FEBBRAIO_INVALID_RESPONSE'); }
+  let body = null;
+  try { body = JSON.parse(response.getContentText() || '{}'); } catch (ignored) {}
   if (status < 200 || status >= 300) {
     const code = String(body && (body.code || body.error) || 'HTTP_' + status).toUpperCase();
     throw new Error('FEBBRAIO_' + code);
   }
+  if (!body) throw new Error('FEBBRAIO_INVALID_RESPONSE');
   return body && body.data != null ? body.data : body;
 }
 
