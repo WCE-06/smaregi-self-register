@@ -1,6 +1,7 @@
 const QUEUE_SHEET = 'commands';
 const PRODUCT_SHEET = 'products';
 const MENU_CONFIG_SHEET = 'menu_config';
+const INVENTORY_RECEIPT_SHEET = 'inventory_receipts';
 const BRIDGE_STATUS_PROPERTY = 'BRIDGE_STATUS_JSON';
 const PRODUCT_SYNC_STATUS_PROPERTY = 'PRODUCT_SYNC_STATUS_JSON';
 const BRIDGE_STATUS_MAX_AGE_MS = 30000;
@@ -80,6 +81,9 @@ function handleUiApi_(params) {
         break;
       case 'status':
         result = getJobStatus(String(payload.jobId || ''), uiToken);
+        break;
+      case 'adminLogin':
+        result = employeeAdminLogin(String(payload.password || ''), uiToken);
         break;
       default:
         throw new Error('INVALID_UI_ACTION');
@@ -438,6 +442,60 @@ function getMenuManagementData(adminToken) {
   requireAdminToken_(adminToken);
   const result = getCustomerProducts(property_('UI_ACCESS_TOKEN', ''));
   return {products:result.products};
+}
+
+function employeeAdminLogin(password, uiToken) {
+  requireUiToken_(uiToken);
+  const cache = CacheService.getScriptCache();
+  const attempts = Number(cache.get('EMPLOYEE_ADMIN_FAILED_ATTEMPTS') || 0);
+  if (attempts >= 10) throw new Error('ADMIN_LOGIN_LOCKED');
+  const expected = property_('EMPLOYEE_ADMIN_PASSWORD', property_('ADMIN_ACCESS_TOKEN', ''));
+  if (!safeEqual_(String(password || ''), expected)) {
+    cache.put('EMPLOYEE_ADMIN_FAILED_ATTEMPTS', String(attempts + 1), 600);
+    throw new Error('ADMIN_LOGIN_FAILED');
+  }
+  cache.remove('EMPLOYEE_ADMIN_FAILED_ATTEMPTS');
+  return {
+    ok:true,
+    url:ScriptApp.getService().getUrl() + '?page=admin&adminToken=' + encodeURIComponent(requiredProperty_('ADMIN_ACCESS_TOKEN'))
+  };
+}
+
+function getInventoryManagementData(adminToken) {
+  requireAdminToken_(adminToken);
+  const products = getMenuManagementData(adminToken).products.map(product => ({
+    code:product.code,
+    name:product.name,
+    section:product.section
+  }));
+  const sheet = inventoryReceiptSheet_();
+  const lots = sheet.getLastRow() < 2 ? [] : sheet.getRange(2,1,sheet.getLastRow()-1,8).getValues().map(row => ({
+    id:String(row[0] || ''),
+    productCode:String(row[1] || ''),
+    productName:String(row[2] || ''),
+    quantity:Number(row[3] || 0),
+    remainingQuantity:Number(row[4] || 0),
+    expiryDate:row[5] instanceof Date ? Utilities.formatDate(row[5], Session.getScriptTimeZone(), 'yyyy-MM-dd') : String(row[5] || ''),
+    receivedAt:row[6] instanceof Date ? row[6].toISOString() : String(row[6] || ''),
+    note:String(row[7] || '')
+  })).sort((a,b) => String(a.expiryDate || '9999-12-31').localeCompare(String(b.expiryDate || '9999-12-31')));
+  return {products:products, lots:lots};
+}
+
+function addInventoryReceipt(input, adminToken) {
+  requireAdminToken_(adminToken);
+  input = input || {};
+  const code = String(input.productCode || '').trim();
+  const quantity = Math.floor(Number(input.quantity || 0));
+  const expiryDate = String(input.expiryDate || '').trim();
+  if (!/^[0-9A-Za-z]+$/.test(code) || quantity < 1 || quantity > 100000) throw new Error('INVALID_INVENTORY_INPUT');
+  if (expiryDate && !/^\d{4}-\d{2}-\d{2}$/.test(expiryDate)) throw new Error('INVALID_EXPIRY_DATE');
+  const productRows = productSheet_().getDataRange().getValues();
+  const productRow = productRows.slice(1).find(row => String(row[1] || '') === code);
+  if (!productRow) throw new Error('PRODUCT_NOT_FOUND');
+  const id = Utilities.getUuid();
+  inventoryReceiptSheet_().appendRow([id,code,String(productRow[2] || ''),quantity,quantity,expiryDate ? new Date(expiryDate + 'T00:00:00+09:00') : '',new Date(),String(input.note || '').slice(0,200)]);
+  return {ok:true,id:id};
 }
 
 function saveMenuProductConfig(input, adminToken) {
@@ -948,6 +1006,18 @@ function menuConfigSheet_() {
   let sheet = book.getSheetByName(MENU_CONFIG_SHEET);
   if (!sheet) sheet = book.insertSheet(MENU_CONFIG_SHEET);
   const headers = ['productCode','imageUrl','description','optionGroupsJson','available','updatedAt','section'];
+  if (sheet.getLastRow() === 0) { sheet.appendRow(headers); sheet.setFrozenRows(1); }
+  else sheet.getRange(1,1,1,headers.length).setValues([headers]);
+  return sheet;
+}
+
+function inventoryReceiptSheet_() {
+  const id = PropertiesService.getScriptProperties().getProperty('QUEUE_SPREADSHEET_ID');
+  if (!id) queueSheet_();
+  const book = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('QUEUE_SPREADSHEET_ID'));
+  let sheet = book.getSheetByName(INVENTORY_RECEIPT_SHEET);
+  if (!sheet) sheet = book.insertSheet(INVENTORY_RECEIPT_SHEET);
+  const headers = ['id','productCode','productName','quantity','remainingQuantity','expiryDate','receivedAt','note'];
   if (sheet.getLastRow() === 0) { sheet.appendRow(headers); sheet.setFrozenRows(1); }
   else sheet.getRange(1,1,1,headers.length).setValues([headers]);
   return sheet;
