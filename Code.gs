@@ -280,6 +280,7 @@ function getCustomerProducts(uiToken) {
     const categoryId = String(row[4] || '');
     const config = menuConfigs[code] || {};
     const kitchenAsset = aozoraKitchenAsset_(productName);
+    const isAozoraMenuName = Boolean(kitchenAsset) || isAozoraMenuName_(productName);
     const isAozoraCategory = categoryId === '32' || categoryId === '33';
     const isMocktail = /モクテル|ノンアル/.test(productName);
     const cocktailRecipe = isMocktail ? null : aozoraCocktailRecipe_(productName);
@@ -293,7 +294,7 @@ function getCustomerProducts(uiToken) {
     categoryId:categoryId,
     tag:String(row[5] || ''),
     displaySequence:Number(row[6] || 0),
-    section:String(config.section || (kitchenAsset || cocktailRecipe || isAozoraCategory ? 'kitchen' : row[7]) || 'shop'),
+    section:String(isAozoraMenuName || cocktailRecipe || isAozoraCategory ? 'kitchen' : (config.section || row[7] || 'shop')),
     barcode:row[8] === true,
     icon:String(row[9] || '🛍️'),
     basePrice:Number(row[10] || row[3] || 0),
@@ -302,7 +303,7 @@ function getCustomerProducts(uiToken) {
     priceLabel:String(row[13] || '税込'),
     imageUrl:String(config.imageUrl || kitchenAsset || row[14] || ''),
     description:String(config.description || row[15] || ''),
-    menuCategory:isMocktail ? 'mocktail' : (cocktailRecipe ? 'cocktail' : (categoryId === '33' ? 'drink' : (kitchenAsset || categoryId === '32' ? 'food' : ''))),
+    menuCategory:isMocktail ? 'mocktail' : (cocktailRecipe ? 'cocktail' : ''),
     cocktailBase:cocktailRecipe ? cocktailRecipe.base : '',
     cocktailMixer:cocktailRecipe ? cocktailRecipe.mixer : '',
     optionGroups:optionGroups,
@@ -376,6 +377,11 @@ function aozoraKitchenAsset_(productName) {
     '温泉卵':'product_image_1777790570_1785587093.jpg'
   };
   return assets[normalized] ? base + assets[normalized] : '';
+}
+
+function isAozoraMenuName_(productName) {
+  const name = String(productName || '').replace(/[\s　]+/g, '');
+  return /全部(?:載せ|のせ)うどん|きつねうどん|かけうどん|わかめうどん|ほうとう/.test(name);
 }
 
 function verifyMemberCode(memberCode, uiToken) {
@@ -752,6 +758,7 @@ function normalizeSmaregiProduct_(item) {
   let icon = '🛍️';
   const categoryId = String(item.categoryId || '');
   if (categoryId === '32' || categoryId === '33') { section = 'kitchen'; icon = '🍴'; }
+  if (isAozoraMenuName_(name) || aozoraKitchenAsset_(name)) { section = 'kitchen'; icon = '🍴'; }
   if (tags.includes('SELFREG_KITCHEN')) { section = 'kitchen'; icon = '🍴'; }
   if (tags.includes('SELFREG_ATELIER')) { section = 'atelier'; icon = '🎨'; }
   const noBarcode = tags.includes('SELFREG_NOBARCODE');
