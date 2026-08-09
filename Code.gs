@@ -293,8 +293,8 @@ function getCustomerProducts(uiToken) {
     price:Number(row[3] || 0),
     categoryId:categoryId,
     tag:String(row[5] || ''),
-    displaySequence:Number(row[6] || 0),
-    section:String(isAozoraMenuName || cocktailRecipe || isAozoraCategory ? 'kitchen' : (config.section || row[7] || 'shop')),
+    displaySequence:Number(config.displayOrder !== '' && config.displayOrder != null ? config.displayOrder : (row[6] || 0)),
+    section:String(config.section || (isAozoraMenuName || cocktailRecipe || isAozoraCategory ? 'kitchen' : (row[7] || 'shop'))),
     barcode:row[8] === true,
     icon:String(row[9] || '🛍️'),
     basePrice:Number(row[10] || row[3] || 0),
@@ -303,12 +303,14 @@ function getCustomerProducts(uiToken) {
     priceLabel:String(row[13] || '税込'),
     imageUrl:String(config.imageUrl || kitchenAsset || row[14] || ''),
     description:String(config.description || row[15] || ''),
-    menuCategory:isMocktail ? 'mocktail' : (cocktailRecipe ? 'cocktail' : ''),
+    menuCategory:String(config.menuCategory || (isMocktail ? 'soft-mocktail' : (cocktailRecipe ? 'alcohol-cocktail' : ''))),
+    flags:Array.isArray(config.flags) ? config.flags : [],
     cocktailBase:cocktailRecipe ? cocktailRecipe.base : '',
     cocktailMixer:cocktailRecipe ? cocktailRecipe.mixer : '',
     optionGroups:optionGroups,
     available:config.available !== false
   };}).filter(product => product.code && product.name && product.available);
+  products.sort((a,b) => a.displaySequence - b.displaySequence || a.name.localeCompare(b.name, 'ja'));
   return {products:products, sync:readProductSyncStatus_()};
 }
 
@@ -515,11 +517,17 @@ function saveMenuProductConfig(input, adminToken) {
   const optionGroups = validateOptionGroups_(input.optionGroups || []);
   const available = input.available !== false;
   const section = ['shop','kitchen','atelier','hidden'].includes(String(input.section || '')) ? String(input.section) : 'shop';
+  const categoryValues = ['','food-tsukemen','food-udon','food-pasta','food-don','food-side','soft-cafe','soft-simple','soft-mocktail','alcohol-main','alcohol-cocktail','dessert'];
+  const menuCategory = categoryValues.includes(String(input.menuCategory || '')) ? String(input.menuCategory || '') : '';
+  const displayOrder = String(input.displayOrder == null ? '' : input.displayOrder).trim() === '' ? '' : Math.max(0, Math.min(999999, Math.floor(Number(input.displayOrder))));
+  if (displayOrder !== '' && !Number.isFinite(displayOrder)) throw new Error('INVALID_DISPLAY_ORDER');
+  const allowedFlags = ['recommended','new','limited','popular','spicy'];
+  const flags = Array.isArray(input.flags) ? input.flags.map(String).filter((value,index,array) => allowedFlags.includes(value) && array.indexOf(value) === index) : [];
   const sheet = menuConfigSheet_();
   const values = sheet.getDataRange().getValues();
   let row = 0;
   for (let i = 1; i < values.length; i++) if (String(values[i][0]) === productCode) { row = i + 1; break; }
-  const record = [productCode,imageUrl,description,JSON.stringify(optionGroups),available,new Date(),section];
+  const record = [productCode,imageUrl,description,JSON.stringify(optionGroups),available,new Date(),section,displayOrder,menuCategory,flags.join(',')];
   if (row) sheet.getRange(row,1,1,record.length).setValues([record]);
   else sheet.appendRow(record);
   return {ok:true, productCode:productCode};
@@ -1012,7 +1020,7 @@ function menuConfigSheet_() {
   const book = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('QUEUE_SPREADSHEET_ID'));
   let sheet = book.getSheetByName(MENU_CONFIG_SHEET);
   if (!sheet) sheet = book.insertSheet(MENU_CONFIG_SHEET);
-  const headers = ['productCode','imageUrl','description','optionGroupsJson','available','updatedAt','section'];
+  const headers = ['productCode','imageUrl','description','optionGroupsJson','available','updatedAt','section','displayOrder','menuCategory','flags'];
   if (sheet.getLastRow() === 0) { sheet.appendRow(headers); sheet.setFrozenRows(1); }
   else sheet.getRange(1,1,1,headers.length).setValues([headers]);
   return sheet;
@@ -1033,11 +1041,11 @@ function inventoryReceiptSheet_() {
 function readMenuConfigMap_() {
   const sheet = menuConfigSheet_();
   if (sheet.getLastRow() < 2) return {};
-  const values = sheet.getRange(2,1,sheet.getLastRow()-1,7).getValues();
+  const values = sheet.getRange(2,1,sheet.getLastRow()-1,10).getValues();
   const map = {};
   values.forEach(row => {
     const code = String(row[0] || '');
-    if (code) map[code] = {imageUrl:String(row[1] || ''),description:String(row[2] || ''),optionGroupsJson:String(row[3] || ''),available:row[4] !== false,section:String(row[6] || '')};
+    if (code) map[code] = {imageUrl:String(row[1] || ''),description:String(row[2] || ''),optionGroupsJson:String(row[3] || ''),available:row[4] !== false,section:String(row[6] || ''),displayOrder:row[7] === '' ? '' : Number(row[7]),menuCategory:String(row[8] || ''),flags:String(row[9] || '').split(',').filter(Boolean)};
   });
   return map;
 }
