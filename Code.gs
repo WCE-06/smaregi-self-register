@@ -110,33 +110,8 @@ function handleUiApi_(params) {
 function getFebbraioCheckoutCharge(memberCode, uiToken) {
   requireUiToken_(uiToken);
   const code = validateFebbraioIdentifier_(memberCode, 'MEMBER_CODE');
-  const result = febbraioFetch_('/api/v1/pos/sessions?memberCode=' + encodeURIComponent(code), {method:'get'});
-  return validateFebbraioSession_(result);
-}
-
-function completeFebbraioPaymentFromBridge_(body) {
-  const sessionId = validateFebbraioIdentifier_(body.sessionId, 'SESSION_ID');
-  const paymentId = validateFebbraioIdentifier_(body.paymentId, 'PAYMENT_ID');
-  const idempotencyKey = validateFebbraioIdempotencyKey_(body.idempotencyKey);
-  const paidAt = Number(body.paidAt || Date.now());
-  const totalExcludingTax = validateYen_(body.totalExcludingTax, 'TOTAL_EXCLUDING_TAX');
-  const taxAmount = validateYen_(body.taxAmount, 'TAX_AMOUNT');
-  const totalIncludingTax = validateYen_(body.totalIncludingTax, 'TOTAL_INCLUDING_TAX');
-  if (!Number.isSafeInteger(paidAt) || paidAt <= 0) throw new Error('INVALID_PAID_AT');
-  return febbraioFetch_('/api/v1/pos/sessions/' + encodeURIComponent(sessionId) + '/payments', {
-    method:'post',
-    contentType:'application/json',
-    headers:{'Idempotency-Key':idempotencyKey},
-    payload:JSON.stringify({
-      result:'SUCCESS',
-      source:'FEBBRAIO_SELF_REGISTER',
-      paymentId:paymentId,
-      paidAt:paidAt,
-      totalExcludingTax:totalExcludingTax,
-      taxAmount:taxAmount,
-      totalIncludingTax:totalIncludingTax
-    })
-  });
+  const result = febbraioFetch_('/api/v1/febbraio/active-usage?memberCode=' + encodeURIComponent(code), {method:'get'});
+  return validateFebbraioUsage_(result, code);
 }
 
 function febbraioFetch_(path, options) {
@@ -158,34 +133,29 @@ function febbraioFetch_(path, options) {
   return body && body.data != null ? body.data : body;
 }
 
-function validateFebbraioSession_(session) {
-  if (!session || typeof session !== 'object') throw new Error('FEBBRAIO_INVALID_RESPONSE');
-  validateFebbraioIdentifier_(session.sessionId, 'SESSION_ID');
-  validateFebbraioIdentifier_(session.memberCode, 'MEMBER_CODE');
-  validateFebbraioIdentifier_(session.productCode, 'PRODUCT_CODE');
-  if (String(session.studioId) !== 'FEBBRAIO') throw new Error('FEBBRAIO_INVALID_STUDIO');
-  if (String(session.status) !== 'IN_USE' || String(session.paymentStatus) !== 'UNPAID') throw new Error('FEBBRAIO_SESSION_NOT_PAYABLE');
-  ['unitPriceExcludingTax','taxRateBps','totalExcludingTax','taxAmount','totalIncludingTax'].forEach(key => validateYen_(session[key], key.toUpperCase()));
-  if (Number(session.totalExcludingTax) + Number(session.taxAmount) !== Number(session.totalIncludingTax)) throw new Error('FEBBRAIO_AMOUNT_MISMATCH');
-  return session;
-}
-
-function validateFebbraioIdempotencyKey_(value) {
-  const text = String(value || '').trim();
-  if (text.length < 16 || text.length > 128 || !/^[0-9A-Za-z_.:-]+$/.test(text)) throw new Error('INVALID_IDEMPOTENCY_KEY');
-  return text;
+function validateFebbraioUsage_(usage, requestedMemberCode) {
+  if (!usage || typeof usage !== 'object') throw new Error('FEBBRAIO_INVALID_RESPONSE');
+  if (usage.found === false) return {found:false, code:String(usage.code || 'NO_ACTIVE_USAGE')};
+  if (usage.found !== true) throw new Error('FEBBRAIO_INVALID_RESPONSE');
+  const memberCode = validateFebbraioIdentifier_(usage.memberCode, 'MEMBER_CODE');
+  if (memberCode.toUpperCase() !== String(requestedMemberCode).toUpperCase()) throw new Error('FEBBRAIO_MEMBER_MISMATCH');
+  const productCode = String(usage.productCode || '').toUpperCase();
+  const billingHours = Number(usage.billingHours);
+  const usageMinutes = Number(usage.usageMinutes);
+  const memberRank = String(usage.memberRank || '').toUpperCase();
+  if (!/^(STN|STR)(0[1-9]|10)$/.test(productCode)) throw new Error('FEBBRAIO_INVALID_PRODUCT_CODE');
+  if (!Number.isSafeInteger(billingHours) || billingHours < 1 || billingHours > 10) throw new Error('FEBBRAIO_INVALID_BILLING_HOURS');
+  if (Number(productCode.slice(-2)) !== billingHours) throw new Error('FEBBRAIO_PRODUCT_HOURS_MISMATCH');
+  if (!Number.isSafeInteger(usageMinutes) || usageMinutes < 0) throw new Error('FEBBRAIO_INVALID_USAGE_MINUTES');
+  if (memberRank === 'STANDARD' && !productCode.startsWith('STN')) throw new Error('FEBBRAIO_MEMBER_RANK_MISMATCH');
+  if (['RESIDENT','RESIDENT_CARD'].includes(memberRank) && !productCode.startsWith('STR')) throw new Error('FEBBRAIO_MEMBER_RANK_MISMATCH');
+  return {found:true,memberCode:memberCode,checkedInAt:Number(usage.checkedInAt||0),memberRank:memberRank,usageMinutes:usageMinutes,billingHours:billingHours,productCode:productCode};
 }
 
 function validateFebbraioIdentifier_(value, label) {
   const text = String(value || '').trim();
   if (!text || text.length > 100 || !/^[0-9A-Za-z_.:-]+$/.test(text)) throw new Error('INVALID_' + label);
   return text;
-}
-
-function validateYen_(value, label) {
-  const amount = Number(value);
-  if (!Number.isSafeInteger(amount) || amount < 0) throw new Error('INVALID_' + label);
-  return amount;
 }
 
 function jsonp_(value, callback) {
@@ -209,9 +179,6 @@ function doPost(e) {
     if (body.op === 'heartbeat') {
       saveBridgeStatus_(body.status || {});
       return json_({ok:true, serverTime:new Date().toISOString()});
-    }
-    if (body.op === 'febbraio_payment_success') {
-      return json_({ok:true, result:completeFebbraioPaymentFromBridge_(body)});
     }
     return json_({ok:false, error:'INVALID_OPERATION'});
   } catch (error) {
