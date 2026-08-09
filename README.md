@@ -51,8 +51,8 @@ GAS Web UI
 
 - 会員検索後：1500ms
 - 強制確認「いいえ」後：2000ms
-- 商品入力後：1200ms
-- キャッシュレスの階層間：1500ms
+- 商品入力後：500ms
+- キャッシュレスの階層間：900ms
 - 取消ボタン間：1500ms
 
 各値はGASのScript Property（`WAIT_AFTER_MEMBER_SEARCH_MS`など）でコード変更なしに調整できます。Windows側の`wait_ms:1000`はAssistiveTouchの滞留クリック用なので別管理です。
