@@ -165,12 +165,12 @@ window.RegisterBridge = (() => {
 
   function customerMessage(value) {
     const source = String(value && (value.code || value.message || value) || '');
-    if (/BLE_DISCONNECTED|BLE=DISCONNECTED/.test(source)) return 'iPadとの接続を確認しています。少しお待ちください。';
-    if (/PICO_DISCONNECTED|serial port not found/.test(source)) return 'レジ制御機器との接続を確認しています。';
+    if (/BLE_DISCONNECTED|BLE=DISCONNECTED/.test(source)) return 'お会計の準備をしています。少しお待ちください。';
+    if (/PICO_DISCONNECTED|serial port not found/.test(source)) return 'お会計の準備をしています。少しお待ちください。';
     if (/COORDINATES|POINT_NOT_REGISTERED/.test(source)) return 'このお支払い方法は現在準備中です。';
     if (/REGISTER_BUSY/.test(source)) return 'ただいま別のお会計を処理しています。少しお待ちください。';
     if (/PRODUCTS_NOT_SYNCED|商品同期/.test(source)) return '商品情報を準備しています。管理画面から商品同期を実行してください。';
-    if (/BRIDGE_OFFLINE|OFFLINE/.test(source)) return 'レジ端末との接続を確認しています。';
+    if (/BRIDGE_OFFLINE|OFFLINE/.test(source)) return 'お会計の準備をしています。少しお待ちください。';
     if (/REGISTER_TIMEOUT|NO_RESPONSE/.test(source)) return '処理を確認できませんでした。最初からもう一度お試しください。';
     return '処理を完了できませんでした。最初からもう一度お試しください。';
   }
