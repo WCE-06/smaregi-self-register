@@ -37,9 +37,8 @@
   </section>
 
   <section class="card">
-    <div class="status-head"><div><h2>Aozora kitchen メニュー管理</h2><p>商品画像・説明・サイズやトッピングの選択肢を自社管理します。</p></div><button class="button secondary" id="reloadMenuButton">再読み込み</button></div>
-    <div class="notice">スマレジ画像は15分同期で自動取得します。画像URLを入力すると自社指定画像を優先します。各商品の表示先もここで変更できます。</div>
-    <div class="menu-list" id="menuList"><div class="detail">メニューを読み込んでいます。</div></div>
+    <div class="status-head"><div><h2>Aozora kitchen メニュー管理</h2><p>商品数が多いため、検索と並べ替えに対応した専用画面へ分離しました。</p></div><button class="button" id="openMenuAdmin">メニュー編集を開く</button></div>
+    <div class="notice">顧客画面と同じカード表示で、＋による商品追加、ドラッグによる並べ替え、カテゴリー・画像・説明・オプションを編集できます。</div>
   </section>
 
   <section class="card guide">
@@ -123,7 +122,7 @@ function setBusy(value){busy=value;byId('syncButton').disabled=value}
 
 byId('syncButton').addEventListener('click',async()=>{if(busy)return;setBusy(true);byId('syncMessage').textContent='スマレジから商品を取得しています…';try{const status=await gasCall('runProductSync');byId('syncMessage').textContent=status.message||'同期しました';await refresh()}catch(error){renderError(error)}finally{setBusy(false)}});
 byId('inventoryForm').addEventListener('submit',async event=>{event.preventDefault();const raw=byId('inventoryProduct').value.trim();const product=inventoryProducts.find(item=>item.code===raw||item.name===raw);if(!product){byId('inventoryMessage').textContent='商品を候補から選択してください';return}const button=byId('inventorySave');try{button.disabled=true;byId('inventoryMessage').textContent='登録中…';await addInventoryReceipt({productCode:product.code,quantity:Number(byId('inventoryQuantity').value),expiryDate:byId('inventoryExpiry').value,note:byId('inventoryNote').value});byId('inventoryMessage').textContent='入荷を登録しました';byId('inventoryQuantity').value='1';byId('inventoryNote').value='';await loadInventory()}catch(error){byId('inventoryMessage').textContent='登録エラー: '+String(error.message||error)}finally{button.disabled=false}});
-byId('reloadMenuButton').addEventListener('click',loadMenu);byId('reloadInventoryButton').addEventListener('click',loadInventory);refresh();loadMenu();loadInventory();
+byId('openMenuAdmin').addEventListener('click',()=>location.href='?page=menu-admin&adminToken='+encodeURIComponent(ADMIN_TOKEN));byId('reloadInventoryButton').addEventListener('click',loadInventory);refresh();loadInventory();
 </script>
 </body>
 </html>
