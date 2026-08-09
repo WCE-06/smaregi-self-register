@@ -423,6 +423,12 @@ function isAozoraMenuName_(productName) {
   return /全部(?:載せ|のせ)うどん|きつねうどん|かけうどん|わかめうどん|ほうとう/.test(name);
 }
 
+function isAozoraProductCode_(productCode) {
+  const code = String(productCode || '').trim().toLowerCase();
+  return /(?:^|_)(?:tukemen|tsukemen|udon|houtou|hoto|don|pasta|karaage|potato|cheese_?dog|hot_?dog|coffee|latte|cocoa|juice|mocktail|cocktail)(?:_|$)/.test(code)
+    || /^(?:kakuni_don|kitsune_udon|kake_udon)$/.test(code);
+}
+
 function verifyMemberCode(memberCode, uiToken) {
   requireUiToken_(uiToken);
   const code = String(memberCode || '').trim().toUpperCase();
@@ -850,7 +856,7 @@ function normalizeSmaregiProduct_(item) {
   let icon = '🛍️';
   const categoryId = String(item.categoryId || '');
   if (categoryId === '32' || categoryId === '33') { section = 'kitchen'; icon = '🍴'; }
-  if (isAozoraMenuName_(name) || aozoraKitchenAsset_(name)) { section = 'kitchen'; icon = '🍴'; }
+  if (isAozoraMenuName_(name) || aozoraKitchenAsset_(name) || isAozoraProductCode_(code)) { section = 'kitchen'; icon = '🍴'; }
   if (tags.includes('SELFREG_KITCHEN')) { section = 'kitchen'; icon = '🍴'; }
   if (tags.includes('SELFREG_ATELIER')) { section = 'atelier'; icon = '🎨'; }
   const noBarcode = tags.includes('SELFREG_NOBARCODE');
@@ -880,16 +886,17 @@ function normalizeSmaregiProduct_(item) {
 
 function inferManagedMenuCategory_(product) {
   const name = String(product && product.name || '');
+  const code = String(product && product.code || '').toLowerCase();
   if (/モクテル|ノンアル/.test(name)) return 'soft-mocktail';
   if (aozoraCocktailRecipe_(name) || /カクテル|レゲエパンチ|モスコミュール|カシス|ファジーネーブル/.test(name)) return 'alcohol-cocktail';
   if (/コーヒーゼリー|かき氷|アイスクリーム|ソフトクリーム|ジェラート|ケーキ|パフェ|プリン|ゼリー|クレープ|スイーツ/.test(name)) return 'dessert';
   if (/コーヒー|ココア|いちごミルク|ミルクティー|カフェラテ|ラテ|紅茶/.test(name)) return 'soft-cafe';
   if (/ビール|焼酎|泡盛|梅酒|日本酒|ワイン|ウイスキー|ハイボール|サワー|酎ハイ|テキーラ/.test(name)) return 'alcohol-main';
   if (/ジュース|ソフトドリンク|ソーダ|コーラ|ラムネ|カルピス|ウーロン茶|緑茶|オレンジ|アップル/.test(name)) return 'soft-simple';
-  if (/つけ麺/.test(name)) return 'food-tsukemen';
-  if (/うどん|ほうとう/.test(name)) return 'food-udon';
-  if (/パスタ|スパゲッティ/.test(name)) return 'food-pasta';
-  if (/丼|ご飯|ライス/.test(name)) return 'food-don';
+  if (/つけ麺/.test(name) || /t?su?kemen/.test(code)) return 'food-tsukemen';
+  if (/うどん|ほうとう/.test(name) || /udon|houtou|hoto/.test(code)) return 'food-udon';
+  if (/パスタ|スパゲッティ/.test(name) || /pasta/.test(code)) return 'food-pasta';
+  if (/丼|ご飯|ライス/.test(name) || /(?:^|_)don(?:_|$)/.test(code)) return 'food-don';
   return 'food-side';
 }
 
