@@ -81,6 +81,7 @@ window.RegisterBridge = (() => {
       productCodes:Array.isArray(input.productCodes) ? input.productCodes.map(String) : [],
       finishAction:String(input.finishAction || ''),
       secondaryAction:String(input.secondaryAction || ''),
+      dependsOnJobId:String(input.dependsOnJobId || ''),
       businessKey:String(input.businessKey || createBusinessKey())
     };
     if (!available()) {
