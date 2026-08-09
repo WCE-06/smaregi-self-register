@@ -887,8 +887,8 @@ function waitProfile_() {
         mode:'POINT_WAIT_V2',
         afterMemberSearchMs:waitValue_('WAIT_AFTER_MEMBER_SEARCH_MS',1500),
         afterForcedNoMs:waitValue_('WAIT_AFTER_FORCED_NO_MS',2000),
-        afterProductMs:waitValue_('WAIT_AFTER_PRODUCT_MS',1200),
-        betweenPaymentActionsMs:waitValue_('WAIT_BETWEEN_PAYMENT_ACTIONS_MS',1500)
+        afterProductMs:waitValue_('WAIT_AFTER_PRODUCT_MS',500),
+        betweenPaymentActionsMs:waitValue_('WAIT_BETWEEN_PAYMENT_ACTIONS_MS',900)
       }
     : {
         mode:'LEGACY_TOTAL_WAIT',
