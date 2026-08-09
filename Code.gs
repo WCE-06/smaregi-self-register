@@ -909,14 +909,14 @@ function waitProfile_() {
         mode:'POINT_WAIT_V2',
         afterMemberSearchMs:waitValue_('WAIT_AFTER_MEMBER_SEARCH_MS',1300),
         afterForcedNoMs:waitValue_('WAIT_AFTER_FORCED_NO_MS',1000),
-        afterProductMs:waitValue_('WAIT_AFTER_PRODUCT_MS',200),
+        afterProductMs:waitValue_('WAIT_AFTER_PRODUCT_MS',50),
         betweenPaymentActionsMs:waitValue_('WAIT_BETWEEN_PAYMENT_ACTIONS_MS',400)
       }
     : {
         mode:'LEGACY_TOTAL_WAIT',
         afterMemberSearchMs:10500,
         afterForcedNoMs:11500,
-        afterProductMs:2000,
+        afterProductMs:50,
         betweenPaymentActionsMs:2000
       };
 }
