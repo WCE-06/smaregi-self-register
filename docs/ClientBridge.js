@@ -184,6 +184,8 @@ window.RegisterBridge = (() => {
 
   function customerMessage(value) {
     const source = String(value && (value.code || value.message || value) || '');
+    if (/FEBBRAIO_SESSION_NOT_FOUND/.test(source)) return '精算できるFEBBRAIO・アートリエの利用情報が見つかりませんでした。';
+    if (/FEBBRAIO_|MISSING_SCRIPT_PROPERTY: FEBBRAIO/.test(source)) return 'FEBBRAIO・アートリエのお会計は現在準備中です。';
     if (/BLE_DISCONNECTED|BLE=DISCONNECTED/.test(source)) return 'お会計の準備をしています。少しお待ちください。';
     if (/PICO_DISCONNECTED|serial port not found/.test(source)) return 'お会計の準備をしています。少しお待ちください。';
     if (/COORDINATES|POINT_NOT_REGISTERED/.test(source)) return 'このお支払い方法は現在準備中です。';
