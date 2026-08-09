@@ -310,14 +310,25 @@ function getCustomerProducts(uiToken, includeUnavailable) {
     const code = String(row[1] || '');
     const productName = String(row[2] || '');
     const categoryId = String(row[4] || '');
-    const config = menuConfigs[code] || {};
+    const config = menuConfigs[code] || null;
     const kitchenAsset = aozoraKitchenAsset_(productName);
     const isAozoraMenuName = Boolean(kitchenAsset) || isAozoraMenuName_(productName);
     const isAozoraCategory = categoryId === '32' || categoryId === '33';
     const isMocktail = /モクテル|ノンアル/.test(productName);
     const cocktailRecipe = isMocktail ? null : aozoraCocktailRecipe_(productName);
     let optionGroups = [];
-    try { optionGroups = config.optionGroupsJson ? JSON.parse(config.optionGroupsJson) : []; } catch (error) {}
+    try { optionGroups = config && config.optionGroupsJson ? JSON.parse(config.optionGroupsJson) : []; } catch (error) {}
+    const hasManualConfig = Boolean(config && (
+      config.imageUrl || config.description || config.optionGroupsJson || config.menuCategory ||
+      (Array.isArray(config.flags) && config.flags.length) || config.available === false
+    ));
+    const fallbackSection = isAozoraMenuName || cocktailRecipe || isAozoraCategory || isAozoraProductCode_(code)
+      ? 'kitchen'
+      : String(row[7] || 'shop');
+    const managedSection = hasManualConfig ? String(config.section || fallbackSection) : fallbackSection;
+    const managedCategory = hasManualConfig
+      ? String(config.menuCategory || '')
+      : String(isMocktail ? 'soft-mocktail' : (cocktailRecipe ? 'alcohol-cocktail' : ''));
     return {
     productId:String(row[0] || ''),
     code:code,
@@ -325,8 +336,8 @@ function getCustomerProducts(uiToken, includeUnavailable) {
     price:Number(row[3] || 0),
     categoryId:categoryId,
     tag:String(row[5] || ''),
-    displaySequence:Number(config.displayOrder !== '' && config.displayOrder != null ? config.displayOrder : (row[6] || 0)),
-    section:String(config.section || (isAozoraMenuName || cocktailRecipe || isAozoraCategory ? 'kitchen' : (row[7] || 'shop'))),
+    displaySequence:Number(config && config.displayOrder !== '' && config.displayOrder != null ? config.displayOrder : (row[6] || 0)),
+    section:managedSection,
     barcode:row[8] === true,
     icon:String(row[9] || '🛍️'),
     basePrice:Number(row[10] || row[3] || 0),
@@ -334,14 +345,15 @@ function getCustomerProducts(uiToken, includeUnavailable) {
     taxRate:Number(row[12] == null || row[12] === '' ? 10 : row[12]),
     taxRounding:String(property_('SMAREGI_TAX_ROUNDING', '1')),
     priceLabel:String(row[13] || '税込'),
-    imageUrl:String(config.imageUrl || kitchenAsset || row[14] || ''),
-    description:String(config.description || row[15] || ''),
-    menuCategory:String(config.menuCategory || (isMocktail ? 'soft-mocktail' : (cocktailRecipe ? 'alcohol-cocktail' : ''))),
-    flags:Array.isArray(config.flags) ? config.flags : [],
+    imageUrl:String(config && config.imageUrl || kitchenAsset || row[14] || ''),
+    description:String(config && config.description || row[15] || ''),
+    menuCategory:managedCategory,
+    flags:config && Array.isArray(config.flags) ? config.flags : [],
     cocktailBase:cocktailRecipe ? cocktailRecipe.base : '',
     cocktailMixer:cocktailRecipe ? cocktailRecipe.mixer : '',
     optionGroups:optionGroups,
-    available:config.available !== false
+    available:(!config || config.available !== false) && managedSection !== 'hidden',
+    managed:Boolean(config)
   };}).filter(product => product.code && product.name && (includeUnavailable || product.available));
   products.sort((a,b) => a.displaySequence - b.displaySequence || a.name.localeCompare(b.name, 'ja'));
   return {products:products, sync:readProductSyncStatus_()};
@@ -419,6 +431,12 @@ function isAozoraMenuName_(productName) {
   return /全部(?:載せ|のせ)うどん|きつねうどん|かけうどん|わかめうどん|ほうとう/.test(name);
 }
 
+function isAozoraProductCode_(productCode) {
+  const code = String(productCode || '').trim().toLowerCase();
+  return /(?:^|_)(?:tukemen|tsukemen|udon|houtou|hoto|don|pasta|karaage|potato|cheese_?dog|hot_?dog|coffee|latte|cocoa|juice|mocktail|cocktail)(?:_|$)/.test(code)
+    || /^(?:kakuni_don|kitsune_udon|kake_udon)$/.test(code);
+}
+
 function verifyMemberCode(memberCode, uiToken) {
   requireUiToken_(uiToken);
   const code = String(memberCode || '').trim().toUpperCase();
@@ -477,6 +495,15 @@ function getProductSyncStatus(adminToken) {
     storedCount:Math.max(0, sheet.getLastRow() - 1),
     triggerInstalled:property_('PRODUCT_SYNC_TRIGGER_INSTALLED', 'false') === 'true'
   };
+}
+
+function getManagementSpreadsheetUrl(adminToken) {
+  requireAdminToken_(adminToken);
+  productSheet_();
+  menuConfigSheet_();
+  inventoryReceiptSheet_();
+  const id = requiredProperty_('QUEUE_SPREADSHEET_ID');
+  return {url:SpreadsheetApp.openById(id).getUrl(), sheetName:MENU_CONFIG_SHEET};
 }
 
 function getMenuManagementData(adminToken) {
@@ -560,7 +587,10 @@ function saveMenuProductConfig(input, adminToken) {
   const values = sheet.getDataRange().getValues();
   let row = 0;
   for (let i = 1; i < values.length; i++) if (String(values[i][0]) === productCode) { row = i + 1; break; }
-  const record = [productCode,imageUrl,description,JSON.stringify(optionGroups),available,new Date(),section,displayOrder,menuCategory,flags.join(',')];
+  const productRows = productSheet_().getDataRange().getValues();
+  const productRow = productRows.slice(1).find(product => String(product[1] || '') === productCode);
+  const productName = productRow ? String(productRow[2] || '') : '';
+  const record = [productCode,imageUrl,description,JSON.stringify(optionGroups),available,new Date(),section,displayOrder,menuCategory,flags.join(','),productName];
   if (row) sheet.getRange(row,1,1,record.length).setValues([record]);
   else sheet.appendRow(record);
   return {ok:true, productCode:productCode};
@@ -583,7 +613,9 @@ function saveMenuLayout(entries, adminToken) {
     if (existingRow) {
       sheet.getRange(existingRow,7,1,3).setValues([['kitchen',order,category]]);
     } else {
-      sheet.appendRow([code,'','',JSON.stringify([]),true,new Date(),'kitchen',order,category,'']);
+      const productRows = productSheet_().getDataRange().getValues();
+      const productRow = productRows.slice(1).find(product => String(product[1] || '') === code);
+      sheet.appendRow([code,'','',JSON.stringify([]),true,new Date(),'kitchen',order,category,'',productRow ? String(productRow[2] || '') : '']);
       rowMap[code] = sheet.getLastRow();
     }
   });
@@ -669,6 +701,7 @@ function syncProducts() {
           product.description
         ]));
       }
+      ensureMenuConfigRows_(normalized);
     } finally {
       lock.releaseLock();
     }
@@ -831,7 +864,7 @@ function normalizeSmaregiProduct_(item) {
   let icon = '🛍️';
   const categoryId = String(item.categoryId || '');
   if (categoryId === '32' || categoryId === '33') { section = 'kitchen'; icon = '🍴'; }
-  if (isAozoraMenuName_(name) || aozoraKitchenAsset_(name)) { section = 'kitchen'; icon = '🍴'; }
+  if (isAozoraMenuName_(name) || aozoraKitchenAsset_(name) || isAozoraProductCode_(code)) { section = 'kitchen'; icon = '🍴'; }
   if (tags.includes('SELFREG_KITCHEN')) { section = 'kitchen'; icon = '🍴'; }
   if (tags.includes('SELFREG_ATELIER')) { section = 'atelier'; icon = '🎨'; }
   const noBarcode = tags.includes('SELFREG_NOBARCODE');
@@ -857,6 +890,70 @@ function normalizeSmaregiProduct_(item) {
     priceLabel:taxDivision === '2' ? '非課税' : (taxExcluded ? '税込（税抜登録）' : '税込'),
     description:String(item.description || item.catchCopy || '').trim().slice(0,500)
   };
+}
+
+function inferManagedMenuCategory_(product) {
+  const name = String(product && product.name || '');
+  const code = String(product && product.code || '').toLowerCase();
+  if (/モクテル|ノンアル/.test(name)) return 'soft-mocktail';
+  if (aozoraCocktailRecipe_(name) || /カクテル|レゲエパンチ|モスコミュール|カシス|ファジーネーブル/.test(name)) return 'alcohol-cocktail';
+  if (/コーヒーゼリー|かき氷|アイスクリーム|ソフトクリーム|ジェラート|ケーキ|パフェ|プリン|ゼリー|クレープ|スイーツ/.test(name)) return 'dessert';
+  if (/コーヒー|ココア|いちごミルク|ミルクティー|カフェラテ|ラテ|紅茶/.test(name)) return 'soft-cafe';
+  if (/ビール|焼酎|泡盛|梅酒|日本酒|ワイン|ウイスキー|ハイボール|サワー|酎ハイ|テキーラ/.test(name)) return 'alcohol-main';
+  if (/ジュース|ソフトドリンク|ソーダ|コーラ|ラムネ|カルピス|ウーロン茶|緑茶|オレンジ|アップル/.test(name)) return 'soft-simple';
+  if (/つけ麺/.test(name) || /t?su?kemen/.test(code)) return 'food-tsukemen';
+  if (/うどん|ほうとう/.test(name) || /udon|houtou|hoto/.test(code)) return 'food-udon';
+  if (/パスタ|スパゲッティ/.test(name) || /pasta/.test(code)) return 'food-pasta';
+  if (/丼|ご飯|ライス/.test(name) || /(?:^|_)don(?:_|$)/.test(code)) return 'food-don';
+  return 'food-side';
+}
+
+function ensureMenuConfigRows_(products) {
+  const sheet = menuConfigSheet_();
+  const values = sheet.getDataRange().getValues();
+  const rowMap = {};
+  for (let i = 1; i < values.length; i++) {
+    const code = String(values[i][0] || '');
+    if (code) rowMap[code] = i + 1;
+  }
+  const productNameMap = {};
+  const productMap = {};
+  products.forEach(product => {
+    productNameMap[product.code] = product.name;
+    productMap[product.code] = product;
+  });
+  if (values.length > 1) {
+    const names = values.slice(1).map(row => [productNameMap[String(row[0] || '')] || String(row[10] || '')]);
+    sheet.getRange(2, 11, names.length, 1).setValues(names);
+
+    // 既存行の空欄と、旧版がshopへ仮分類したAozora商品だけを補正する。
+    // hiddenや手動で設定済みのカテゴリーは上書きしない。
+    const classifications = values.slice(1).map(row => {
+      const product = productMap[String(row[0] || '')];
+      let section = String(row[6] || '');
+      let displayOrder = row[7];
+      let menuCategory = String(row[8] || '');
+      if (product) {
+        if (!section || (section === 'shop' && product.section === 'kitchen' && !menuCategory)) {
+          section = ['shop','kitchen','atelier'].includes(product.section) ? product.section : 'hidden';
+        }
+        if (section === 'kitchen' && !menuCategory) menuCategory = inferManagedMenuCategory_(product);
+        if (displayOrder === '') displayOrder = product.displaySequence;
+      }
+      return [section, displayOrder, menuCategory];
+    });
+    sheet.getRange(2, 7, classifications.length, 3).setValues(classifications);
+  }
+  const additions = [];
+  products.forEach(product => {
+    const existingRow = rowMap[product.code];
+    if (existingRow) return;
+    const section = ['shop','kitchen','atelier'].includes(product.section) ? product.section : 'hidden';
+    const menuCategory = section === 'kitchen' ? inferManagedMenuCategory_(product) : '';
+    additions.push([product.code,'','',JSON.stringify([]),true,new Date(),section,product.displaySequence,menuCategory,'',product.name]);
+  });
+  if (additions.length) sheet.getRange(sheet.getLastRow() + 1, 1, additions.length, 11).setValues(additions);
+  return {added:additions.length,total:products.length};
 }
 
 function productTaxRate_(item) {
@@ -1099,7 +1196,7 @@ function menuConfigSheet_() {
   const book = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('QUEUE_SPREADSHEET_ID'));
   let sheet = book.getSheetByName(MENU_CONFIG_SHEET);
   if (!sheet) sheet = book.insertSheet(MENU_CONFIG_SHEET);
-  const headers = ['productCode','imageUrl','description','optionGroupsJson','available','updatedAt','section','displayOrder','menuCategory','flags'];
+  const headers = ['productCode','imageUrl','description','optionGroupsJson','available','updatedAt','section','displayOrder','menuCategory','flags','productName'];
   if (sheet.getLastRow() === 0) { sheet.appendRow(headers); sheet.setFrozenRows(1); }
   else sheet.getRange(1,1,1,headers.length).setValues([headers]);
   return sheet;
