@@ -142,6 +142,7 @@ window.RegisterBridge = (() => {
   }
 
   function febbraioCharge(memberCode) { return febbraioCall('febbraioCharge', {memberCode:String(memberCode || '')}, 'getFebbraioCheckoutCharge', [String(memberCode || '')]); }
+  function keepAlive(businessKey) { return febbraioCall('keepAlive', {businessKey:String(businessKey || '')}, 'enqueueKeepAlive', [String(businessKey || '')]); }
 
   function adminLogin(password) {
     if (!available()) return Promise.reject(new Error('ADMIN_LOGIN_UNAVAILABLE'));
@@ -198,5 +199,5 @@ window.RegisterBridge = (() => {
     return normalized;
   }
 
-  return {available, createBusinessKey, readiness, products, member, febbraioCharge, adminLogin, enqueue, cancel, getStatus, watch, customerMessage};
+  return {available, createBusinessKey, readiness, products, member, febbraioCharge, keepAlive, adminLogin, enqueue, cancel, getStatus, watch, customerMessage};
 })();
