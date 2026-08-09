@@ -34,6 +34,18 @@ GAS Web UI
 - 支払い選択後は「決済端末を起動しています」と表示し、裏側の命令順序を維持
 - Windows heartbeat protocol v2対応
 - POINT後の滞留待機はWindows、画面遷移待機はGASが担当
+- TYPEは`[0-9A-Za-z_-]{1,64}`に対応し、Windowsが成功後に1500msの入力安定化待ちを担当
+- GASはTYPEとENTERの間へWAITを追加せず、ENTER後のスマレジ画面処理待ちだけを担当
+
+### Windows・Pico Wとの命令契約
+
+- `POINT`：Windowsの許可リストと`coordinates.json`に登録済みの標準操作名のみ
+- `TYPE`：`[0-9A-Za-z_-]{1,64}`。成功後にWindowsが1500ms待機
+- `ENTER`：TYPEの直後に送信する
+- `WAIT`：0～30000ms。スマレジの画面遷移待ちに使用する
+- 1ジョブ最大100ステップ
+
+実機登録確認済みの商品コード：`kakuni_don`、`kitsune_udon`、`kake_udon`
 
 ### 画面遷移待機（初期値）
 
