@@ -219,6 +219,7 @@ function enqueueScenario(form, uiToken) {
   const job = {
     id:Utilities.getUuid(),
     businessKey:businessKey,
+    dependsOnJobId:String(form.dependsOnJobId || ''),
     version:2,
     waitProfile:waits.mode,
     requiredPoints:requiredPoints,
@@ -947,6 +948,7 @@ function validateForm_(form) {
   });
   if (!ALLOWED_FINISH_ACTIONS.includes(form.finishAction || '')) throw new Error('終了操作が不正です');
   if (!ALLOWED_SECONDARY_ACTIONS.includes(form.secondaryAction || '')) throw new Error('追加操作が不正です');
+  if (form.dependsOnJobId && !/^[0-9a-f-]{36}$/i.test(String(form.dependsOnJobId))) throw new Error('依存ジョブIDが不正です');
   if (form.businessKey && !/^[0-9A-Za-z_-]{8,80}$/.test(form.businessKey)) throw new Error('業務キーが不正です');
 }
 
@@ -994,9 +996,21 @@ function claimNextJob_() {
   try {
     const sheet = queueSheet_();
     const values = sheet.getDataRange().getValues();
+    const statusById = {};
+    for (let i = 1; i < values.length; i++) statusById[String(values[i][0])] = String(values[i][2]);
     for (let i = 1; i < values.length; i++) {
       if (values[i][2] === 'QUEUED') {
         const job = JSON.parse(values[i][3]);
+        if (job.dependsOnJobId) {
+          const dependencyStatus = statusById[String(job.dependsOnJobId)] || 'NOT_FOUND';
+          if (dependencyStatus === 'ERROR' || dependencyStatus === 'NOT_FOUND') {
+            sheet.getRange(i + 1, 3).setValue('ERROR');
+            sheet.getRange(i + 1, 6).setValue(new Date());
+            sheet.getRange(i + 1, 7).setValue(JSON.stringify({message:'DEPENDENCY_FAILED'}));
+            continue;
+          }
+          if (dependencyStatus !== 'COMPLETED') continue;
+        }
         sheet.getRange(i + 1, 3).setValue('RUNNING');
         sheet.getRange(i + 1, 5).setValue(new Date());
         return job;
