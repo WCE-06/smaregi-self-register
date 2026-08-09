@@ -95,6 +95,21 @@ function handleUiApi_(params) {
       case 'adminLogin':
         result = employeeAdminLogin(String(payload.password || ''), uiToken);
         break;
+      case 'febbraioCharge':
+        result = getFebbraioCheckoutCharge(String(payload.memberCode || ''), uiToken);
+        break;
+      case 'febbraioClaim':
+        result = claimFebbraioCheckout(String(payload.sessionId || ''), String(payload.businessKey || ''), uiToken);
+        break;
+      case 'febbraioRelease':
+        result = releaseFebbraioCheckout(String(payload.sessionId || ''), uiToken);
+        break;
+      case 'febbraioComplete':
+        result = completeFebbraioPayment(String(payload.sessionId || ''), String(payload.paymentId || ''), uiToken);
+        break;
+      case 'febbraioStatus':
+        result = getFebbraioPaymentStatus(String(payload.sessionId || ''), uiToken);
+        break;
       default:
         throw new Error('INVALID_UI_ACTION');
     }
@@ -102,6 +117,82 @@ function handleUiApi_(params) {
   } catch (error) {
     return jsonp_({ok:false, error:String(error && error.message || error)}, callback);
   }
+}
+
+function getFebbraioCheckoutCharge(memberCode, uiToken) {
+  requireUiToken_(uiToken);
+  const code = validateFebbraioIdentifier_(memberCode, 'MEMBER_CODE');
+  return callFebbraioApi_('checkout.getCharge', {memberCode:code});
+}
+
+function claimFebbraioCheckout(sessionId, businessKey, uiToken) {
+  requireUiToken_(uiToken);
+  return callFebbraioApi_('checkout.claim', {
+    sessionId:validateFebbraioIdentifier_(sessionId, 'SESSION_ID'),
+    terminalId:febbraioTerminalId_()
+  }, String(businessKey || ''));
+}
+
+function releaseFebbraioCheckout(sessionId, uiToken) {
+  requireUiToken_(uiToken);
+  return callFebbraioApi_('checkout.release', {
+    sessionId:validateFebbraioIdentifier_(sessionId, 'SESSION_ID'),
+    terminalId:febbraioTerminalId_()
+  });
+}
+
+function completeFebbraioPayment(sessionId, paymentId, uiToken) {
+  requireUiToken_(uiToken);
+  return callFebbraioApi_('payment.complete', {
+    sessionId:validateFebbraioIdentifier_(sessionId, 'SESSION_ID'),
+    paymentId:validateFebbraioIdentifier_(paymentId, 'PAYMENT_ID')
+  }, String(paymentId || ''));
+}
+
+function getFebbraioPaymentStatus(sessionId, uiToken) {
+  requireUiToken_(uiToken);
+  return callFebbraioApi_('session.paymentStatus', {
+    sessionId:validateFebbraioIdentifier_(sessionId, 'SESSION_ID')
+  });
+}
+
+function callFebbraioApi_(action, data, idempotencyKey) {
+  const response = UrlFetchApp.fetch(requiredProperty_('FEBBRAIO_API_URL'), {
+    method:'post',
+    contentType:'application/json',
+    payload:JSON.stringify({
+      version:1,
+      action:String(action),
+      requestId:febbraioRequestId_(action, idempotencyKey),
+      deviceId:property_('FEBBRAIO_DEVICE_ID', 'SMAREREGI-SELFREG-01'),
+      apiToken:requiredProperty_('FEBBRAIO_API_TOKEN'),
+      data:data || {}
+    }),
+    muteHttpExceptions:true
+  });
+  const status = response.getResponseCode();
+  let body;
+  try { body = JSON.parse(response.getContentText() || '{}'); }
+  catch (ignored) { throw new Error('FEBBRAIO_INVALID_RESPONSE'); }
+  if (status < 200 || status >= 300 || !body || body.ok !== true) {
+    throw new Error('FEBBRAIO_' + String(body && body.error || 'HTTP_' + status).toUpperCase());
+  }
+  return body.data == null ? null : body.data;
+}
+
+function febbraioRequestId_(action, key) {
+  const source = String(key || '').replace(/[^0-9A-Za-z_.:-]/g, '').slice(0, 80);
+  return source ? 'SELFREG:' + String(action) + ':' + source : Utilities.getUuid();
+}
+
+function febbraioTerminalId_() {
+  return property_('FEBBRAIO_TERMINAL_ID', 'SELFREG-01');
+}
+
+function validateFebbraioIdentifier_(value, label) {
+  const text = String(value || '').trim();
+  if (!text || text.length > 100 || !/^[0-9A-Za-z_.:-]+$/.test(text)) throw new Error('INVALID_' + label);
+  return text;
 }
 
 function jsonp_(value, callback) {
