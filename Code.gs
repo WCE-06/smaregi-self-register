@@ -302,6 +302,10 @@ function getJobStatus(jobId, uiToken) {
 
 function getCustomerProducts(uiToken, includeUnavailable) {
   requireUiToken_(uiToken);
+  if (!includeUnavailable) {
+    const cached = readCustomerProductsCache_();
+    if (cached) return cached;
+  }
   const sheet = productSheet_();
   if (sheet.getLastRow() < 2) return {products:[], sync:readProductSyncStatus_()};
   const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn()).getValues();
@@ -356,7 +360,41 @@ function getCustomerProducts(uiToken, includeUnavailable) {
     managed:Boolean(config)
   };}).filter(product => product.code && product.name && (includeUnavailable || product.available));
   products.sort((a,b) => a.displaySequence - b.displaySequence || a.name.localeCompare(b.name, 'ja'));
-  return {products:products, sync:readProductSyncStatus_()};
+  const result = {products:products, sync:readProductSyncStatus_()};
+  if (!includeUnavailable) writeCustomerProductsCache_(result);
+  return result;
+}
+
+function warmCustomerProductsCache() {
+  const cache = CacheService.getScriptCache();
+  const count = Number(cache.get('CUSTOMER_PRODUCTS_CHUNKS') || 0);
+  cache.remove('CUSTOMER_PRODUCTS_CHUNKS');
+  for (let i = 0; i < count; i++) cache.remove('CUSTOMER_PRODUCTS_' + i);
+  return getCustomerProducts(requiredProperty_('UI_ACCESS_TOKEN'), false).products.length;
+}
+
+function readCustomerProductsCache_() {
+  const cache = CacheService.getScriptCache();
+  const count = Number(cache.get('CUSTOMER_PRODUCTS_CHUNKS') || 0);
+  if (!count) return null;
+  let json = '';
+  for (let i = 0; i < count; i++) {
+    const part = cache.get('CUSTOMER_PRODUCTS_' + i);
+    if (part == null) return null;
+    json += part;
+  }
+  try { return JSON.parse(json); } catch (error) { return null; }
+}
+
+function writeCustomerProductsCache_(value) {
+  const cache = CacheService.getScriptCache();
+  const json = JSON.stringify(value);
+  const chunkSize = 80000;
+  const count = Math.ceil(json.length / chunkSize);
+  for (let i = 0; i < count; i++) {
+    cache.put('CUSTOMER_PRODUCTS_' + i, json.slice(i * chunkSize, (i + 1) * chunkSize), 900);
+  }
+  cache.put('CUSTOMER_PRODUCTS_CHUNKS', String(count), 900);
 }
 
 function aozoraCocktailRecipe_(productName) {
