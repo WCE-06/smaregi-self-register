@@ -255,9 +255,15 @@ function enqueueCancelScenario(businessKey, uiToken, context) {
   const existing = findJobByBusinessKey_(key);
   if (existing) return {ok:true,id:existing.id,duplicate:true};
   const steps = [];
-  preActions.forEach(name => {
+  preActions.forEach((name, index) => {
     steps.push({type:'POINT',name:name});
-    steps.push({type:'WAIT',ms:waitValue_('WAIT_BETWEEN_PAYMENT_ACTIONS_MS',400)});
+    const isLastPaymentCancel = index === preActions.length - 1;
+    steps.push({
+      type:'WAIT',
+      ms:isLastPaymentCancel
+        ? waitValue_('WAIT_AFTER_PAYMENT_CANCEL_MS',3000)
+        : waitValue_('WAIT_BETWEEN_PAYMENT_ACTIONS_MS',800)
+    });
   });
   steps.push(
     {type:'POINT',name:'取引取消ボタン'},
