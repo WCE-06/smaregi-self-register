@@ -48,6 +48,15 @@ function doGet(e) {
       .addMetaTag('viewport', 'width=device-width, initial-scale=1');
   }
 
+  if ((params.page || '') === 'menu-admin') {
+    if (!hasAdminToken_(params.adminToken || '')) return HtmlService.createHtmlOutput('管理画面のURLが正しくありません。');
+    const menuTemplate = HtmlService.createTemplateFromFile('MenuAdmin');
+    menuTemplate.adminToken = params.adminToken;
+    return menuTemplate.evaluate()
+      .setTitle('Aozora kitchen メニュー編集')
+      .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+  }
+
   const uiToken = params.uiToken || '';
   if (!hasUiToken_(uiToken)) return HtmlService.createHtmlOutput('アクセスURLが正しくありません。');
   const template = HtmlService.createTemplateFromFile('Index');
@@ -268,7 +277,7 @@ function getJobStatus(jobId, uiToken) {
   return {id:jobId, status:'NOT_FOUND', result:''};
 }
 
-function getCustomerProducts(uiToken) {
+function getCustomerProducts(uiToken, includeUnavailable) {
   requireUiToken_(uiToken);
   const sheet = productSheet_();
   if (sheet.getLastRow() < 2) return {products:[], sync:readProductSyncStatus_()};
@@ -309,7 +318,7 @@ function getCustomerProducts(uiToken) {
     cocktailMixer:cocktailRecipe ? cocktailRecipe.mixer : '',
     optionGroups:optionGroups,
     available:config.available !== false
-  };}).filter(product => product.code && product.name && product.available);
+  };}).filter(product => product.code && product.name && (includeUnavailable || product.available));
   products.sort((a,b) => a.displaySequence - b.displaySequence || a.name.localeCompare(b.name, 'ja'));
   return {products:products, sync:readProductSyncStatus_()};
 }
@@ -448,7 +457,7 @@ function getProductSyncStatus(adminToken) {
 
 function getMenuManagementData(adminToken) {
   requireAdminToken_(adminToken);
-  const result = getCustomerProducts(property_('UI_ACCESS_TOKEN', ''));
+  const result = getCustomerProducts(property_('UI_ACCESS_TOKEN', ''), true);
   return {products:result.products};
 }
 
@@ -531,6 +540,30 @@ function saveMenuProductConfig(input, adminToken) {
   if (row) sheet.getRange(row,1,1,record.length).setValues([record]);
   else sheet.appendRow(record);
   return {ok:true, productCode:productCode};
+}
+
+function saveMenuLayout(entries, adminToken) {
+  requireAdminToken_(adminToken);
+  if (!Array.isArray(entries) || entries.length > 500) throw new Error('INVALID_MENU_LAYOUT');
+  const allowedCategories = ['food-tsukemen','food-udon','food-pasta','food-don','food-side','soft-cafe','soft-simple','soft-mocktail','alcohol-main','alcohol-cocktail','dessert'];
+  const sheet = menuConfigSheet_();
+  const values = sheet.getDataRange().getValues();
+  const rowMap = {};
+  for (let i = 1; i < values.length; i++) rowMap[String(values[i][0] || '')] = i + 1;
+  entries.forEach((entry,index) => {
+    const code = String(entry && entry.productCode || '').trim();
+    const category = String(entry && entry.menuCategory || '');
+    if (!/^[0-9A-Za-z]+$/.test(code) || !allowedCategories.includes(category)) throw new Error('INVALID_MENU_LAYOUT_ENTRY_' + index);
+    const order = Math.max(0, Math.min(999999, Math.floor(Number(entry.displayOrder || 0))));
+    const existingRow = rowMap[code];
+    if (existingRow) {
+      sheet.getRange(existingRow,7,1,3).setValues([['kitchen',order,category]]);
+    } else {
+      sheet.appendRow([code,'','',JSON.stringify([]),true,new Date(),'kitchen',order,category,'']);
+      rowMap[code] = sheet.getLastRow();
+    }
+  });
+  return {ok:true, updatedCount:entries.length};
 }
 
 function validateOptionGroups_(groups) {
