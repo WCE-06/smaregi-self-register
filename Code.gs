@@ -98,6 +98,9 @@ function handleUiApi_(params) {
       case 'febbraioCharge':
         result = getFebbraioCheckoutCharge(String(payload.memberCode || ''), uiToken);
         break;
+      case 'keepAlive':
+        result = enqueueKeepAlive(String(payload.businessKey || ''), uiToken);
+        break;
       default:
         throw new Error('INVALID_UI_ACTION');
     }
@@ -294,6 +297,25 @@ function enqueueScenario(form, uiToken) {
     lock.releaseLock();
   }
   return {ok:true, id:job.id, duplicate:false};
+}
+
+function enqueueKeepAlive(businessKey, uiToken) {
+  requireUiToken_(uiToken);
+  const key = String(businessKey || '');
+  if (!/^[0-9A-Za-z_-]{8,120}$/.test(key)) throw new Error('業務キーが不正です');
+  const readiness = getRegisterReadiness(['テンキー5'], uiToken);
+  if (!readiness.ready) throw new Error(readiness.code + ': ' + readiness.message);
+  const existing = findJobByBusinessKey_(key);
+  if (existing) return {ok:true,id:existing.id,duplicate:true};
+  const job = {id:Utilities.getUuid(),businessKey:key,dependsOnJobId:'',version:2,waitProfile:'KEEP_ALIVE',requiredPoints:['テンキー5'],steps:[{type:'POINT',name:'テンキー5'}]};
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    const duplicate = findJobByBusinessKey_(key);
+    if (duplicate) return {ok:true,id:duplicate.id,duplicate:true};
+    queueSheet_().appendRow([job.id,new Date(),'QUEUED',JSON.stringify(job),'','','',key]);
+  } finally { lock.releaseLock(); }
+  return {ok:true,id:job.id,duplicate:false};
 }
 
 function enqueueCancelScenario(businessKey, uiToken, context) {
