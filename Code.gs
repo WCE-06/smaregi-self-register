@@ -324,7 +324,7 @@ function getCustomerProducts(uiToken, includeUnavailable) {
     basePrice:Number(row[10] || row[3] || 0),
     taxDivision:String(row[11] == null ? '0' : row[11]),
     taxRate:Number(row[12] == null || row[12] === '' ? 10 : row[12]),
-    taxRounding:String(property_('SMAREGI_TAX_ROUNDING', '0')),
+    taxRounding:String(property_('SMAREGI_TAX_ROUNDING', '1')),
     priceLabel:String(row[13] || '税込'),
     imageUrl:String(config.imageUrl || kitchenAsset || row[14] || ''),
     description:String(config.description || row[15] || ''),
@@ -875,7 +875,7 @@ function productTaxRate_(item) {
 function roundTaxIncludedPrice_(basePrice, taxRate) {
   const rawPrice = Number(basePrice) * (100 + Number(taxRate)) / 100;
   // スマレジの税丸め方式: 0=四捨五入、1=切り捨て、2=切り上げ。
-  const rounding = property_('SMAREGI_TAX_ROUNDING', '0');
+  const rounding = property_('SMAREGI_TAX_ROUNDING', '1');
   if (rounding === '0') return Math.round(rawPrice);
   if (rounding === '2') return Math.ceil(rawPrice);
   return Math.floor(rawPrice);
