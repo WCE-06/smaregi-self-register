@@ -154,7 +154,7 @@ window.RegisterBridge = (() => {
 
   async function watch(jobId, onUpdate, options) {
     const timeoutMs = Number(options && options.timeoutMs || 180000);
-    const intervalMs = Number(options && options.intervalMs || 500);
+    const intervalMs = Number(options && options.intervalMs || 150);
     const startedAt = Date.now();
     while (Date.now() - startedAt < timeoutMs) {
       const status = await getStatus(jobId);
