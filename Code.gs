@@ -902,10 +902,32 @@ function ensureMenuConfigRows_(products) {
     if (code) rowMap[code] = i + 1;
   }
   const productNameMap = {};
-  products.forEach(product => { productNameMap[product.code] = product.name; });
+  const productMap = {};
+  products.forEach(product => {
+    productNameMap[product.code] = product.name;
+    productMap[product.code] = product;
+  });
   if (values.length > 1) {
     const names = values.slice(1).map(row => [productNameMap[String(row[0] || '')] || String(row[10] || '')]);
     sheet.getRange(2, 11, names.length, 1).setValues(names);
+
+    // 既存行の空欄と、旧版がshopへ仮分類したAozora商品だけを補正する。
+    // hiddenや手動で設定済みのカテゴリーは上書きしない。
+    const classifications = values.slice(1).map(row => {
+      const product = productMap[String(row[0] || '')];
+      let section = String(row[6] || '');
+      let displayOrder = row[7];
+      let menuCategory = String(row[8] || '');
+      if (product) {
+        if (!section || (section === 'shop' && product.section === 'kitchen' && !menuCategory)) {
+          section = ['shop','kitchen','atelier'].includes(product.section) ? product.section : 'hidden';
+        }
+        if (section === 'kitchen' && !menuCategory) menuCategory = inferManagedMenuCategory_(product);
+        if (displayOrder === '') displayOrder = product.displaySequence;
+      }
+      return [section, displayOrder, menuCategory];
+    });
+    sheet.getRange(2, 7, classifications.length, 3).setValues(classifications);
   }
   const additions = [];
   products.forEach(product => {
