@@ -8,6 +8,7 @@ const BRIDGE_STATUS_MAX_AGE_MS = 30000;
 
 const ALLOWED_FINISH_ACTIONS = [
   '',
+  'お会計ボタン',
   '現金精算ボタン',
   '現金精算キャンセルボタン',
   '現金精算確定ボタン',
