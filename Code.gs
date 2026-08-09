@@ -80,7 +80,7 @@ function handleUiApi_(params) {
         result = enqueueScenario(payload.form || {}, uiToken);
         break;
       case 'cancel':
-        result = enqueueCancelScenario(String(payload.businessKey || ''), uiToken);
+        result = enqueueCancelScenario(String(payload.businessKey || ''), uiToken, String(payload.context || 'transaction'));
         break;
       case 'products':
         result = getCustomerProducts(uiToken);
@@ -236,23 +236,38 @@ function enqueueScenario(form, uiToken) {
   return {ok:true, id:job.id, duplicate:false};
 }
 
-function enqueueCancelScenario(businessKey, uiToken) {
+function enqueueCancelScenario(businessKey, uiToken, context) {
   requireUiToken_(uiToken);
-  const key = String(businessKey || Utilities.getUuid()) + '-cancel';
-  if (!/^[0-9A-Za-z_-]{8,90}$/.test(key)) throw new Error('業務キーが不正です');
-  const requiredPoints = ['取引取消ボタン','取引取消確認ボタン'];
+  const cancelContext = String(context || 'transaction');
+  if (!['transaction','cash','cashless','electronic'].includes(cancelContext)) throw new Error('取消位置が不正です');
+  const key = String(businessKey || Utilities.getUuid()) + '-cancel-' + cancelContext;
+  if (!/^[0-9A-Za-z_-]{8,120}$/.test(key)) throw new Error('業務キーが不正です');
+  const preActions = cancelContext === 'cash'
+    ? ['現金精算キャンセルボタン']
+    : cancelContext === 'cashless'
+      ? ['キャッシュレス決済キャンセルボタン']
+      : cancelContext === 'electronic'
+        ? ['キャッシュレス決済キャンセルボタン','キャッシュレス決済キャンセルボタン']
+        : [];
+  const requiredPoints = [...new Set([...preActions,'取引取消ボタン','取引取消確認ボタン'])];
   const readiness = getRegisterReadiness(requiredPoints, uiToken);
   if (!readiness.ready) throw new Error(readiness.code + ': ' + readiness.message);
   const existing = findJobByBusinessKey_(key);
   if (existing) return {ok:true,id:existing.id,duplicate:true};
+  const steps = [];
+  preActions.forEach(name => {
+    steps.push({type:'POINT',name:name});
+    steps.push({type:'WAIT',ms:waitValue_('WAIT_BETWEEN_PAYMENT_ACTIONS_MS',400)});
+  });
+  steps.push(
+    {type:'POINT',name:'取引取消ボタン'},
+    {type:'WAIT',ms:waitValue_('WAIT_AFTER_CANCEL_MS',800)},
+    {type:'POINT',name:'取引取消確認ボタン'},
+    {type:'WAIT',ms:waitValue_('WAIT_AFTER_CANCEL_CONFIRM_MS',800)}
+  );
   const job = {
     id:Utilities.getUuid(),businessKey:key,version:2,waitProfile:'POINT_WAIT_V2',requiredPoints:requiredPoints,
-    steps:[
-      {type:'POINT',name:'取引取消ボタン'},
-      {type:'WAIT',ms:waitValue_('WAIT_AFTER_CANCEL_MS',800)},
-      {type:'POINT',name:'取引取消確認ボタン'},
-      {type:'WAIT',ms:waitValue_('WAIT_AFTER_CANCEL_CONFIRM_MS',800)}
-    ]
+    steps:steps
   };
   const lock = LockService.getScriptLock();
   lock.waitLock(10000);
