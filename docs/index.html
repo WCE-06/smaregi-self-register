@@ -58,7 +58,7 @@ const publicParams = new URLSearchParams(location.search);
 window.GAS_UI_TOKEN = publicParams.get('uiToken') || '';
 window.GAS_API_URL = 'https://script.google.com/macros/s/AKfycbx-NlcSg-7MoAKRdySnfs05LY2Ttd3RVYEjWjcDx0MfLTE49EYazxUrV8e2CD-dAB8P/exec';
 </script>
-<script src="./ClientBridge.js"></script>
+<script src="./ClientBridge.js?v=73"></script>
 <script>
 // file:// で開いた場合はGAS通信を行わず、画面確認モードとして動作させる。
 if (!window.RegisterBridge) {
