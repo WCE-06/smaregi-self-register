@@ -24,6 +24,9 @@ GAS Web UI
 - `WINDOWS_HEARTBEAT_CONTRACT.md`：Windowsとの状態連携仕様
 - `docs/index.html`：GitHub Pagesで配信する顧客画面
 - `docs/ClientBridge.js`：GitHub PagesとGAS UI APIの接続層
+- `docs/admin.html`：GitHub Pagesの商品・在庫管理画面
+- `docs/menu-admin.html`：GitHub Pagesのメニュー編集画面
+- `docs/AdminBridge.js`：短時間の従業員セッションでGAS管理APIへ接続
 
 ## 現在の設計
 
@@ -34,7 +37,7 @@ GAS Web UI
 - 支払い選択後は「決済端末を起動しています」と表示し、裏側の命令順序を維持
 - Windows heartbeat protocol v2対応
 - POINT後の滞留待機はWindows、画面遷移待機はGASが担当
-- TYPEは`[0-9A-Za-z_-]{1,64}`に対応し、Windowsが成功後に1500msの入力安定化待ちを担当
+- TYPEは`[0-9A-Za-z_-]{1,64}`に対応し、Windowsが成功後に700msの入力安定化待ちを担当
 - GASはTYPEとENTERの間へWAITを追加せず、ENTER後のスマレジ画面処理待ちだけを担当
 - 顧客画面のジョブ完了確認は500ms間隔で行い、商品登録完了後の余分な画面待ちを抑える
 - 会員照会とレジ接続確認を並行実行し、会員確認完了後は直ちに会員番号ジョブを登録する
@@ -49,11 +52,14 @@ GAS Web UI
 - 顧客画面が初期の「会員証をスキャンしてください」の間だけ、BLE HID接続維持のため20秒ごとに`テンキー5`を1回送る。会員証読取後・通常ジョブ実行中・非表示タブでは送らない
 - GitHub Pagesの`ClientBridge.js`には版番号を付け、接続命令追加時に古いJavaScriptがキャッシュから使われないようにする
 - 利用終了・決済状態・予定終了時刻はセルフレジ連携では更新・参照しない
+- 従業員用パスワード入力はAndroidアプリ内テンキーを使用し、純正キーボードに依存しない
+- 管理画面HTMLはGitHub Pagesを正本とし、保存・同期・在庫・秘密情報はGASで管理する
+- 管理ログイン後はGASが発行する30分間の一時セッションを使用し、長期管理トークンをGitHubへ保存しない
 
 ### Windows・Pico Wとの命令契約
 
 - `POINT`：Windowsの許可リストと`coordinates.json`に登録済みの標準操作名のみ
-- `TYPE`：`[0-9A-Za-z_-]{1,64}`。成功後にWindowsが1500ms待機
+- `TYPE`：`[0-9A-Za-z_-]{1,64}`。成功後にWindowsが700ms待機
 - `ENTER`：TYPEの直後に送信する
 - `WAIT`：0～30000ms。スマレジの画面遷移待ちに使用する
 - 1ジョブ最大100ステップ

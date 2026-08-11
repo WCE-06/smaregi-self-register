@@ -1,10 +1,13 @@
 const QUEUE_SHEET = 'commands';
 const PRODUCT_SHEET = 'products';
 const MENU_CONFIG_SHEET = 'menu_config';
+const CATEGORY_SCHEDULE_SHEET = 'category_schedules';
 const INVENTORY_RECEIPT_SHEET = 'inventory_receipts';
 const BRIDGE_STATUS_PROPERTY = 'BRIDGE_STATUS_JSON';
 const PRODUCT_SYNC_STATUS_PROPERTY = 'PRODUCT_SYNC_STATUS_JSON';
 const BRIDGE_STATUS_MAX_AGE_MS = 60000;
+const ADMIN_SESSION_TTL_SECONDS = 1800;
+const DEFAULT_ADMIN_UI_BASE_URL = 'https://wce-06.github.io/smaregi-self-register';
 
 const ALLOWED_FINISH_ACTIONS = [
   '',
@@ -32,8 +35,14 @@ const ALLOWED_SECONDARY_ACTIONS = [
 
 function doGet(e) {
   const params = (e && e.parameter) || {};
+  if ((params.api || '') === 'catalog') {
+    return json_({ok:true, result:getPublicProductCatalog_()});
+  }
   if ((params.api || '') === 'ui') {
     return handleUiApi_(params);
+  }
+  if ((params.api || '') === 'admin') {
+    return handleAdminApi_(params);
   }
   if ((params.op || '') === 'pull') {
     if (!hasBridgeSecret_(params.secret || '')) return json_({ok:false, error:'AUTH'});
@@ -67,6 +76,36 @@ function doGet(e) {
     .addMetaTag('viewport', 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no');
 }
 
+function getPublicProductCatalog_() {
+  const source = getCustomerProducts(requiredProperty_('UI_ACCESS_TOKEN'), false);
+  const schedules = readCategoryScheduleMap_();
+  return {
+    products:(source.products || []).map(product => ({
+      code:product.code,
+      name:product.name,
+      price:product.price,
+      basePrice:product.basePrice,
+      taxDivision:product.taxDivision,
+      taxRate:product.taxRate,
+      taxRounding:product.taxRounding,
+      priceLabel:product.priceLabel,
+      section:isAozoraRetailExclusion_(product.code, product.name) ? 'shop' : product.section,
+      barcode:product.barcode,
+      imageUrl:product.imageUrl,
+      description:product.description,
+      menuCategory:isAozoraRetailExclusion_(product.code, product.name) ? '' : (/かき氷/.test(product.name) ? 'dessert' : canonicalAlcoholCategory_(product.name, product.menuCategory)),
+      displaySequence:product.displaySequence,
+      flags:product.flags,
+      optionGroups:product.optionGroups,
+      cocktailBase:product.cocktailBase,
+      cocktailMixer:product.cocktailMixer
+      ,soldOut:Array.isArray(product.flags) && product.flags.indexOf('sold_out') >= 0
+      ,schedule:schedules[product.menuCategory] || null
+    })),
+    sync:source.sync || {}
+  };
+}
+
 function handleUiApi_(params) {
   const callback = String(params.callback || '');
   try {
@@ -96,7 +135,10 @@ function handleUiApi_(params) {
         result = employeeAdminLogin(String(payload.password || ''), uiToken);
         break;
       case 'febbraioCharge':
-        result = getFebbraioCheckoutCharge(String(payload.memberCode || ''), uiToken);
+        result = checkoutFebbraioFacility(String(payload.memberCode || ''), String(payload.requestId || ''), uiToken);
+        break;
+      case 'febbraioPayment':
+        result = completeFebbraioFacilityPayment(payload || {}, uiToken);
         break;
       case 'keepAlive':
         result = enqueueKeepAlive(String(payload.businessKey || ''), uiToken);
@@ -110,11 +152,92 @@ function handleUiApi_(params) {
   }
 }
 
+function handleAdminApi_(params) {
+  const callback = String(params.callback || '');
+  try {
+    const payload = params.payload ? JSON.parse(params.payload) : {};
+    requireAdminSession_(String(params.session || ''));
+    const adminToken = requiredProperty_('ADMIN_ACCESS_TOKEN');
+    let result;
+    switch (String(params.action || '')) {
+      case 'status': result = getProductSyncStatus(adminToken); break;
+      case 'sync': result = runProductSync(adminToken); break;
+      case 'sheet': result = getManagementSpreadsheetUrl(adminToken); break;
+      case 'inventory': result = getInventoryManagementData(adminToken); break;
+      case 'receipt': result = addInventoryReceipt(payload, adminToken); break;
+      case 'menuData': result = getMenuManagementData(adminToken); break;
+      case 'saveProduct': result = saveMenuProductConfig(payload, adminToken); break;
+      case 'saveLayout': result = saveMenuLayout(payload.entries || [], adminToken); break;
+      case 'saveSchedules': result = saveCategorySchedules(payload.entries || [], adminToken); break;
+      default: throw new Error('INVALID_ADMIN_ACTION');
+    }
+    touchAdminSession_(String(params.session || ''));
+    return jsonp_({ok:true, result:result}, callback);
+  } catch (error) {
+    return jsonp_({ok:false, error:String(error && error.message || error)}, callback);
+  }
+}
+
 function getFebbraioCheckoutCharge(memberCode, uiToken) {
+  return checkoutFebbraioFacility(memberCode, Utilities.getUuid(), uiToken);
+}
+
+function checkoutFebbraioFacility(memberCode, requestId, uiToken) {
   requireUiToken_(uiToken);
   const code = validateFebbraioIdentifier_(memberCode, 'MEMBER_CODE');
-  const result = febbraioFetch_('/api/v1/febbraio/active-usage?memberCode=' + encodeURIComponent(code), {method:'get'});
-  return validateFebbraioUsage_(result, code);
+  const id = validateFebbraioIdentifier_(requestId || Utilities.getUuid(), 'REQUEST_ID');
+  const response = facilityPosFetch_('facility.session.checkout', id, {
+    facilityId:'FEBBRAIO', memberCode:code
+  });
+  const data = validateFacilityCheckout_(response, code);
+  const master = getCustomerProducts(uiToken, true).products.find(product => String(product.code || '').toUpperCase() === data.productCode);
+  if (!master) throw new Error('FEBBRAIO_PRODUCT_NOT_FOUND');
+  if (Number(master.price) !== data.billingAmount) throw new Error('FEBBRAIO_AMOUNT_MISMATCH');
+  return data;
+}
+
+function completeFebbraioFacilityPayment(input, uiToken) {
+  requireUiToken_(uiToken);
+  const sessionId = validateFebbraioIdentifier_(input.sessionId, 'SESSION_ID');
+  const transactionId = validateFebbraioIdentifier_(input.transactionId, 'TRANSACTION_ID');
+  const requestId = validateFebbraioIdentifier_(input.requestId || Utilities.getUuid(), 'REQUEST_ID');
+  const response = facilityPosFetch_('facility.session.payment', requestId, {sessionId:sessionId,transactionId:transactionId});
+  const status = String(response && (response.paymentStatus || response.status) || '').toUpperCase();
+  if (status !== 'PAID') throw new Error('FEBBRAIO_PAYMENT_NOT_CONFIRMED');
+  return response;
+}
+
+function facilityPosFetch_(action, requestId, data) {
+  const url = property_('FACILITY_POS_API_URL', 'https://script.google.com/macros/s/AKfycbyZliqol4PRMnY_CTX7M_52_ecJqYxdqx4mZAfe8Cm1Cy33iAKJxat1v-HhlvRtSfF4/exec');
+  const payload = {version:1,action:action,requestId:requestId,deviceId:property_('FACILITY_POS_DEVICE_ID','SELF-REGISTER-01'),apiToken:requiredProperty_('FACILITY_POS_API_TOKEN'),data:data};
+  const response = UrlFetchApp.fetch(url, {method:'post',contentType:'application/json',payload:JSON.stringify(payload),muteHttpExceptions:true,followRedirects:true});
+  const status = response.getResponseCode();
+  let body = null;
+  try { body = JSON.parse(response.getContentText() || '{}'); } catch (ignored) {}
+  if (status < 200 || status >= 300 || !body || body.ok !== true) {
+    const errorCode = String(body && (body.code || body.error) || 'HTTP_' + status).toUpperCase();
+    console.error(JSON.stringify({type:'FACILITY_POS_ERROR',action:action,requestId:requestId,status:status,error:errorCode}));
+    throw new Error('FEBBRAIO_' + errorCode + '_REQUEST_' + requestId);
+  }
+  return body.data || {};
+}
+
+function validateFacilityCheckout_(data, requestedMemberCode) {
+  if (!data || typeof data !== 'object') throw new Error('FEBBRAIO_INVALID_RESPONSE');
+  const memberCode = validateFebbraioIdentifier_(data.memberCode, 'MEMBER_CODE');
+  if (memberCode.toUpperCase() !== requestedMemberCode.toUpperCase()) throw new Error('FEBBRAIO_MEMBER_MISMATCH');
+  const sessionId = validateFebbraioIdentifier_(data.sessionId, 'SESSION_ID');
+  const productCode = String(data.productCode || '').toUpperCase();
+  const billingHours = Number(data.billingHours);
+  const billingMinutes = Number(data.billingMinutes);
+  const billingAmount = Number(data.billingAmount);
+  if (String(data.facilityId || '').toUpperCase() !== 'FEBBRAIO') throw new Error('FEBBRAIO_FACILITY_MISMATCH');
+  if (String(data.status || '').toUpperCase() !== 'CHECKOUT' || String(data.paymentStatus || '').toUpperCase() !== 'UNPAID') throw new Error('FEBBRAIO_INVALID_STATUS');
+  if (!/^(STN|STR)(0[1-9]|10)$/.test(productCode)) throw new Error('FEBBRAIO_INVALID_PRODUCT_CODE');
+  if (!Number.isSafeInteger(billingHours) || billingHours < 1 || billingHours > 10 || Number(productCode.slice(-2)) !== billingHours) throw new Error('FEBBRAIO_INVALID_BILLING_HOURS');
+  if (!Number.isSafeInteger(billingMinutes) || billingMinutes !== billingHours * 60) throw new Error('FEBBRAIO_INVALID_BILLING_MINUTES');
+  if (!Number.isSafeInteger(billingAmount) || billingAmount < 0) throw new Error('FEBBRAIO_INVALID_BILLING_AMOUNT');
+  return {found:true,sessionId:sessionId,memberCode:memberCode,facilityId:'FEBBRAIO',status:'CHECKOUT',checkoutAt:String(data.checkoutAt||''),billingMinutes:billingMinutes,billingHours:billingHours,usageMinutes:billingMinutes,productCode:productCode,billingAmount:billingAmount,paymentStatus:'UNPAID'};
 }
 
 function febbraioFetch_(path, options) {
@@ -173,6 +296,7 @@ function jsonp_(value, callback) {
 function doPost(e) {
   try {
     const body = JSON.parse((e && e.postData && e.postData.contents) || '{}');
+    if (body.op === 'employeeAdminLogin') return json_({ok:true,result:employeeAdminLoginCore_(String(body.password || ''))});
     requireBridgeSecret_(body.secret || '');
 
     if (body.op === 'result') {
@@ -406,13 +530,16 @@ function getCustomerProducts(uiToken, includeUnavailable) {
       config.imageUrl || config.description || config.optionGroupsJson || config.menuCategory ||
       (Array.isArray(config.flags) && config.flags.length) || config.available === false
     ));
-    const fallbackSection = isAozoraMenuName || cocktailRecipe || isAozoraCategory || isAozoraProductCode_(code)
+    const forceShop = isAozoraRetailExclusion_(code, productName);
+    const fallbackSection = !forceShop && (isAozoraMenuName || cocktailRecipe || isAozoraCategory || isAozoraProductCode_(code))
       ? 'kitchen'
       : String(row[7] || 'shop');
-    const managedSection = hasManualConfig ? String(config.section || fallbackSection) : fallbackSection;
-    const managedCategory = hasManualConfig
+    const managedSection = forceShop ? 'shop' : (hasManualConfig ? String(config.section || fallbackSection) : fallbackSection);
+    const forceDessert = /かき氷/.test(productName);
+    const managedCategoryRaw = forceShop ? '' : (forceDessert ? 'dessert' : (hasManualConfig
       ? String(config.menuCategory || '')
-      : String(isMocktail ? 'soft-mocktail' : (cocktailRecipe ? 'alcohol-cocktail' : ''));
+      : String(isMocktail ? 'soft-mocktail' : (cocktailRecipe ? 'alcohol-cocktail' : ''))));
+    const managedCategory = canonicalAlcoholCategory_(productName, managedCategoryRaw);
     return {
     productId:String(row[0] || ''),
     code:code,
@@ -549,6 +676,13 @@ function isAozoraMenuName_(productName) {
   return /全部(?:載せ|のせ)うどん|きつねうどん|かけうどん|わかめうどん|ほうとう/.test(name);
 }
 
+// 商品名の部分一致だけでは、赤いきつね等の物販JAN商品を厨房メニューにしない。
+function isAozoraRetailExclusion_(productCode, productName) {
+  const code = String(productCode || '').trim();
+  const name = String(productName || '').replace(/[\s　]+/g, '');
+  return /^\d{8,14}$/.test(code) && /赤いきつね|緑のたぬき|カップヌードル|カップ麺|即席麺/.test(name);
+}
+
 function isAozoraProductCode_(productCode) {
   const code = String(productCode || '').trim().toLowerCase();
   return /(?:^|_)(?:tukemen|tsukemen|udon|houtou|hoto|don|pasta|karaage|potato|cheese_?dog|hot_?dog|coffee|latte|cocoa|juice|mocktail|cocktail)(?:_|$)/.test(code)
@@ -627,11 +761,15 @@ function getManagementSpreadsheetUrl(adminToken) {
 function getMenuManagementData(adminToken) {
   requireAdminToken_(adminToken);
   const result = getCustomerProducts(property_('UI_ACCESS_TOKEN', ''), true);
-  return {products:result.products};
+  return {products:result.products, schedules:Object.keys(readCategoryScheduleMap_()).map(key => readCategoryScheduleMap_()[key])};
 }
 
 function employeeAdminLogin(password, uiToken) {
   requireUiToken_(uiToken);
+  return employeeAdminLoginCore_(password);
+}
+
+function employeeAdminLoginCore_(password) {
   const cache = CacheService.getScriptCache();
   const attempts = Number(cache.get('EMPLOYEE_ADMIN_FAILED_ATTEMPTS') || 0);
   if (attempts >= 10) throw new Error('ADMIN_LOGIN_LOCKED');
@@ -641,10 +779,29 @@ function employeeAdminLogin(password, uiToken) {
     throw new Error('ADMIN_LOGIN_FAILED');
   }
   cache.remove('EMPLOYEE_ADMIN_FAILED_ATTEMPTS');
+  const session = createAdminSession_();
+  const baseUrl = property_('ADMIN_UI_BASE_URL', DEFAULT_ADMIN_UI_BASE_URL).replace(/\/$/, '');
   return {
     ok:true,
-    url:ScriptApp.getService().getUrl() + '?page=admin&adminToken=' + encodeURIComponent(requiredProperty_('ADMIN_ACCESS_TOKEN'))
+    url:baseUrl + '/admin.html?session=' + encodeURIComponent(session)
   };
+}
+
+function createAdminSession_() {
+  const session = Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '');
+  CacheService.getScriptCache().put('ADMIN_SESSION_' + session, '1', ADMIN_SESSION_TTL_SECONDS);
+  return session;
+}
+
+function touchAdminSession_(session) {
+  if (!/^[0-9a-f]{64}$/i.test(session)) throw new Error('ADMIN_SESSION_INVALID');
+  CacheService.getScriptCache().put('ADMIN_SESSION_' + session, '1', ADMIN_SESSION_TTL_SECONDS);
+}
+
+function requireAdminSession_(session) {
+  if (!/^[0-9a-f]{64}$/i.test(session) || CacheService.getScriptCache().get('ADMIN_SESSION_' + session) !== '1') {
+    throw new Error('ADMIN_SESSION_EXPIRED');
+  }
 }
 
 function getInventoryManagementData(adminToken) {
@@ -699,7 +856,7 @@ function saveMenuProductConfig(input, adminToken) {
   const menuCategory = categoryValues.includes(String(input.menuCategory || '')) ? String(input.menuCategory || '') : '';
   const displayOrder = String(input.displayOrder == null ? '' : input.displayOrder).trim() === '' ? '' : Math.max(0, Math.min(999999, Math.floor(Number(input.displayOrder))));
   if (displayOrder !== '' && !Number.isFinite(displayOrder)) throw new Error('INVALID_DISPLAY_ORDER');
-  const allowedFlags = ['recommended','new','limited','popular','spicy'];
+  const allowedFlags = ['recommended','new','limited','popular','spicy','sold_out'];
   const flags = Array.isArray(input.flags) ? input.flags.map(String).filter((value,index,array) => allowedFlags.includes(value) && array.indexOf(value) === index) : [];
   const sheet = menuConfigSheet_();
   const values = sheet.getDataRange().getValues();
@@ -711,7 +868,27 @@ function saveMenuProductConfig(input, adminToken) {
   const record = [productCode,imageUrl,description,JSON.stringify(optionGroups),available,new Date(),section,displayOrder,menuCategory,flags.join(','),productName];
   if (row) sheet.getRange(row,1,1,record.length).setValues([record]);
   else sheet.appendRow(record);
+  clearCustomerProductsCache_();
   return {ok:true, productCode:productCode};
+}
+
+function saveCategorySchedules(entries, adminToken) {
+  requireAdminToken_(adminToken);
+  if (!Array.isArray(entries) || entries.length > 30) throw new Error('INVALID_CATEGORY_SCHEDULES');
+  const allowed = ['food-tsukemen','food-udon','food-pasta','food-don','food-side','soft-cafe','soft-simple','soft-mocktail','alcohol-main','alcohol-cocktail','dessert'];
+  const normalized = entries.map((entry,index) => {
+    const category = String(entry && entry.category || '');
+    const start = String(entry && entry.start || '00:00');
+    const end = String(entry && entry.end || '23:59');
+    const days = Array.isArray(entry && entry.days) ? entry.days.map(Number).filter((v,i,a)=>v>=1&&v<=7&&a.indexOf(v)===i) : [];
+    if (!allowed.includes(category) || !/^([01]\d|2[0-3]):[0-5]\d$/.test(start) || !/^([01]\d|2[0-3]):[0-5]\d$/.test(end) || !days.length) throw new Error('INVALID_CATEGORY_SCHEDULE_' + index);
+    return [category, entry.enabled !== false, start, end, days.join(','), new Date()];
+  });
+  const sheet = categoryScheduleSheet_();
+  if (sheet.getLastRow() > 1) sheet.getRange(2,1,sheet.getLastRow()-1,6).clearContent();
+  if (normalized.length) sheet.getRange(2,1,normalized.length,6).setValues(normalized);
+  clearCustomerProductsCache_();
+  return {ok:true, updatedCount:normalized.length};
 }
 
 function saveMenuLayout(entries, adminToken) {
@@ -982,7 +1159,7 @@ function normalizeSmaregiProduct_(item) {
   let icon = '🛍️';
   const categoryId = String(item.categoryId || '');
   if (categoryId === '32' || categoryId === '33') { section = 'kitchen'; icon = '🍴'; }
-  if (isAozoraMenuName_(name) || aozoraKitchenAsset_(name) || isAozoraProductCode_(code)) { section = 'kitchen'; icon = '🍴'; }
+  if (!isAozoraRetailExclusion_(code, name) && (isAozoraMenuName_(name) || aozoraKitchenAsset_(name) || isAozoraProductCode_(code))) { section = 'kitchen'; icon = '🍴'; }
   if (tags.includes('SELFREG_KITCHEN')) { section = 'kitchen'; icon = '🍴'; }
   if (tags.includes('SELFREG_ATELIER')) { section = 'atelier'; icon = '🎨'; }
   const noBarcode = tags.includes('SELFREG_NOBARCODE');
@@ -1026,6 +1203,16 @@ function inferManagedMenuCategory_(product) {
   return 'food-side';
 }
 
+function canonicalAlcoholCategory_(productName, currentCategory) {
+  const name = String(productName || '').replace(/[\s　]+/g, '');
+  const category = String(currentCategory || '');
+  if (/ノンアル|モクテル/.test(name)) return category;
+  if (/カルーア/.test(name)) return 'alcohol-cocktail';
+  if (/瓶ビール|角ハイボール/.test(name)) return 'alcohol-main';
+  if (/(?:芋焼酎|麦焼酎|泡盛|^梅酒).*(?:ロック|水割り|ソーダ割り)$/.test(name)) return 'alcohol-main';
+  return category;
+}
+
 function ensureMenuConfigRows_(products) {
   const sheet = menuConfigSheet_();
   const values = sheet.getDataRange().getValues();
@@ -1052,10 +1239,17 @@ function ensureMenuConfigRows_(products) {
       let displayOrder = row[7];
       let menuCategory = String(row[8] || '');
       if (product) {
+        if (isAozoraRetailExclusion_(product.code, product.name)) {
+          section = 'shop';
+          menuCategory = '';
+        } else {
         if (!section || (section === 'shop' && product.section === 'kitchen' && !menuCategory)) {
           section = ['shop','kitchen','atelier'].includes(product.section) ? product.section : 'hidden';
         }
-        if (section === 'kitchen' && !menuCategory) menuCategory = inferManagedMenuCategory_(product);
+        if (section === 'kitchen' && /かき氷/.test(product.name)) menuCategory = 'dessert';
+        else if (section === 'kitchen' && !menuCategory) menuCategory = inferManagedMenuCategory_(product);
+        if (section === 'kitchen') menuCategory = canonicalAlcoholCategory_(product.name, menuCategory);
+        }
         if (displayOrder === '') displayOrder = product.displaySequence;
       }
       return [section, displayOrder, menuCategory];
@@ -1319,6 +1513,36 @@ function menuConfigSheet_() {
   if (sheet.getLastRow() === 0) { sheet.appendRow(headers); sheet.setFrozenRows(1); }
   else sheet.getRange(1,1,1,headers.length).setValues([headers]);
   return sheet;
+}
+
+function categoryScheduleSheet_() {
+  const id = PropertiesService.getScriptProperties().getProperty('QUEUE_SPREADSHEET_ID');
+  if (!id) queueSheet_();
+  const book = SpreadsheetApp.openById(PropertiesService.getScriptProperties().getProperty('QUEUE_SPREADSHEET_ID'));
+  let sheet = book.getSheetByName(CATEGORY_SCHEDULE_SHEET);
+  if (!sheet) sheet = book.insertSheet(CATEGORY_SCHEDULE_SHEET);
+  const headers = ['category','enabled','startTime','endTime','daysMonToSun','updatedAt'];
+  if (sheet.getLastRow() === 0) { sheet.appendRow(headers); sheet.setFrozenRows(1); }
+  else sheet.getRange(1,1,1,headers.length).setValues([headers]);
+  return sheet;
+}
+
+function readCategoryScheduleMap_() {
+  const sheet = categoryScheduleSheet_();
+  const map = {};
+  if (sheet.getLastRow() < 2) return map;
+  sheet.getRange(2,1,sheet.getLastRow()-1,6).getValues().forEach(row => {
+    const category = String(row[0] || '');
+    if (category) map[category] = {category:category,enabled:row[1] !== false,start:String(row[2] || '00:00'),end:String(row[3] || '23:59'),days:String(row[4] || '1,2,3,4,5,6,7').split(',').map(Number).filter(Boolean)};
+  });
+  return map;
+}
+
+function clearCustomerProductsCache_() {
+  const cache = CacheService.getScriptCache();
+  const count = Number(cache.get('CUSTOMER_PRODUCTS_CHUNKS') || 0);
+  cache.remove('CUSTOMER_PRODUCTS_CHUNKS');
+  for (let i = 0; i < count; i++) cache.remove('CUSTOMER_PRODUCTS_' + i);
 }
 
 function inventoryReceiptSheet_() {
