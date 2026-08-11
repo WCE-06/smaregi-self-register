@@ -386,6 +386,8 @@ private fun ScannerCapture(minLength: Int, onScan: (String) -> Unit) {
             EditText(context).apply {
                 showSoftInputOnFocus = false
                 isSingleLine = true
+                isFocusable = true
+                isFocusableInTouchMode = true
                 alpha = 0f
                 val handler = Handler(Looper.getMainLooper())
                 var pending: Runnable? = null
@@ -404,8 +406,24 @@ private fun ScannerCapture(minLength: Int, onScan: (String) -> Unit) {
                         }.also { handler.postDelayed(it, 700) }
                     }
                 }
-                requestFocus()
+                // 画面内のボタンやロゴを触った後も、バーコードリーダーの
+                // キー入力先を自動でこの欄へ戻す。純正キーボードは表示しない。
+                setOnFocusChangeListener { view, hasFocus ->
+                    if (!hasFocus) view.post { view.requestFocus() }
+                }
+                post { requestFocus() }
+                val focusKeeper = object : Runnable {
+                    override fun run() {
+                        if (!isAttachedToWindow) return
+                        if (!hasFocus()) requestFocus()
+                        postDelayed(this, 250)
+                    }
+                }
+                post(focusKeeper)
             }
+        },
+        update = { field ->
+            if (!field.hasFocus()) field.post { field.requestFocus() }
         },
     )
 }
