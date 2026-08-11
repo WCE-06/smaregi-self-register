@@ -49,6 +49,8 @@ import jp.co.compassionworld.selfregister.data.RegisterApiClient
 import jp.co.compassionworld.selfregister.ui.RegisterViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.async
 import coil3.compose.AsyncImage
 import kotlin.math.ceil
 import java.time.DayOfWeek
@@ -113,6 +115,7 @@ private fun SelfRegisterTheme(content: @Composable () -> Unit) {
 private fun RegisterApp(viewModel: RegisterViewModel = viewModel()) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val workflowScope = rememberCoroutineScope()
     LaunchedEffect(context) { RegisterApiClient.configure(context) }
     var catalog by remember { mutableStateOf<List<CatalogProduct>>(emptyList()) }
     var activityKey by remember { mutableIntStateOf(0) }
@@ -120,7 +123,7 @@ private fun RegisterApp(viewModel: RegisterViewModel = viewModel()) {
     var lastAdminTapAt by remember { mutableLongStateOf(0L) }
     var showAdminLogin by remember { mutableStateOf(false) }
     var adminUrl by remember { mutableStateOf<String?>(null) }
-    var memberJobId by remember { mutableStateOf("") }
+    var memberJobDeferred by remember { mutableStateOf<Deferred<String>?>(null) }
     var productJobId by remember { mutableStateOf("") }
     var febbraioCheckout by remember { mutableStateOf<FebbraioCheckout?>(null) }
     var saleStartedAt by remember { mutableLongStateOf(0L) }
@@ -132,7 +135,7 @@ private fun RegisterApp(viewModel: RegisterViewModel = viewModel()) {
     }
     val reset: () -> Unit = {
         viewModel.dispatch(CheckoutAction.Reset)
-        memberJobId = ""
+        memberJobDeferred = null
         productJobId = ""
         febbraioCheckout = null
         saleStartedAt = 0L
@@ -160,10 +163,14 @@ private fun RegisterApp(viewModel: RegisterViewModel = viewModel()) {
                 CheckoutStep.VerifyingMember -> {
                     val memberCode = state.memberCode ?: error("MEMBER_CODE_REQUIRED")
                     if (!RegisterApiClient.verifyMember(memberCode)) error("会員情報を確認できませんでした。")
-                    memberJobId = RegisterApiClient.enqueue(
-                        businessKey = "${state.transactionId}_member",
-                        memberCode = memberCode,
-                    )
+                    // 顧客名簿の確認が済んだ時点で画面を先へ進める。
+                    // スマレジiPadへの会員入力は、店舗選択中に裏で並行実行する。
+                    memberJobDeferred = workflowScope.async {
+                        RegisterApiClient.enqueue(
+                            businessKey = "${state.transactionId}_member",
+                            memberCode = memberCode,
+                        )
+                    }
                     viewModel.dispatch(CheckoutAction.MemberAccepted)
                 }
                 CheckoutStep.ProductSelection -> if (state.service == ServiceType.FEBBRAIO && febbraioCheckout == null) {
@@ -188,6 +195,7 @@ private fun RegisterApp(viewModel: RegisterViewModel = viewModel()) {
                     )
                 }
                 CheckoutStep.OrderReview -> if (productJobId.isBlank() && state.cart.isNotEmpty()) {
+                    val memberJobId = memberJobDeferred?.await().orEmpty()
                     productJobId = RegisterApiClient.enqueue(
                         businessKey = "${state.transactionId}_products",
                         productCodes = state.cart.flatMap { item -> List(item.quantity) { item.productCode } },
