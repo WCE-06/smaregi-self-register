@@ -27,6 +27,7 @@ const ALLOWED_FINISH_ACTIONS = [
 const ALLOWED_SECONDARY_ACTIONS = [
   '',
   'クレジットカード決済ボタン',
+  '電子マネー決済ボタン',
   '交通系電子マネー決済ボタン',
   'QUICPay決済ボタン',
   'iD決済ボタン',
@@ -111,8 +112,16 @@ function handleUiApi_(params) {
   try {
     const payload = params.payload ? JSON.parse(params.payload) : {};
     const uiToken = String(params.uiToken || '');
+    const result = runUiAction_(String(params.action || ''), payload, uiToken);
+    return jsonp_({ok:true, result:result}, callback);
+  } catch (error) {
+    return jsonp_({ok:false, error:String(error && error.message || error)}, callback);
+  }
+}
+
+function runUiAction_(action, payload, uiToken) {
     let result;
-    switch (String(params.action || '')) {
+    switch (String(action || '')) {
       case 'readiness':
         result = getRegisterReadiness(payload.requiredPoints || [], uiToken);
         break;
@@ -140,16 +149,16 @@ function handleUiApi_(params) {
       case 'febbraioPayment':
         result = completeFebbraioFacilityPayment(payload || {}, uiToken);
         break;
+      case 'smaregiSale':
+        result = findSmaregiSale_(payload || {}, uiToken);
+        break;
       case 'keepAlive':
         result = enqueueKeepAlive(String(payload.businessKey || ''), uiToken);
         break;
       default:
         throw new Error('INVALID_UI_ACTION');
     }
-    return jsonp_({ok:true, result:result}, callback);
-  } catch (error) {
-    return jsonp_({ok:false, error:String(error && error.message || error)}, callback);
-  }
+    return result;
 }
 
 function handleAdminApi_(params) {
@@ -205,6 +214,67 @@ function completeFebbraioFacilityPayment(input, uiToken) {
   const status = String(response && (response.paymentStatus || response.status) || '').toUpperCase();
   if (status !== 'PAID') throw new Error('FEBBRAIO_PAYMENT_NOT_CONFIRMED');
   return response;
+}
+
+function findSmaregiSale_(input, uiToken) {
+  requireUiToken_(uiToken);
+  input = input || {};
+  const memberCode = validateFebbraioIdentifier_(input.memberCode, 'MEMBER_CODE').toUpperCase();
+  const expectedTotal = Math.floor(Number(input.expectedTotal));
+  const productCodes = Array.isArray(input.productCodes)
+    ? input.productCodes.map(code => String(code || '').trim().toUpperCase()).filter(Boolean)
+    : [];
+  const sinceMs = Number(input.sinceMs || 0);
+  if (!Number.isSafeInteger(expectedTotal) || expectedTotal < 0 || !productCodes.length || productCodes.length > 50) throw new Error('INVALID_SALE_QUERY');
+  if (!Number.isFinite(sinceMs) || sinceMs < Date.now() - 60 * 60 * 1000 || sinceMs > Date.now() + 60 * 1000) throw new Error('INVALID_SALE_QUERY_TIME');
+
+  const contractId = requiredProperty_('SMAREGI_CONTRACT_ID');
+  const apiBase = smaregiEnvironment_() === 'sandbox' ? 'https://api.smaregi.dev' : 'https://api.smaregi.jp';
+  let token = getSmaregiAccessToken_();
+  const from = Utilities.formatDate(new Date(sinceMs - 30000), 'GMT', "yyyy-MM-dd'T'HH:mm:ss'Z'");
+  const to = Utilities.formatDate(new Date(Date.now() + 30000), 'GMT', "yyyy-MM-dd'T'HH:mm:ss'Z'");
+  const query = [
+    'transaction_date_time-from=' + encodeURIComponent(from),
+    'transaction_date_time-to=' + encodeURIComponent(to),
+    'transaction_head_division=1',
+    'customer_code=' + encodeURIComponent(memberCode),
+    'with_details=all',
+    'sort=' + encodeURIComponent('transactionDateTime:desc'),
+    'limit=20'
+  ].join('&');
+  let response;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    response = UrlFetchApp.fetch(apiBase + '/' + encodeURIComponent(contractId) + '/pos/transactions?' + query, {
+      method:'get',headers:{Authorization:'Bearer ' + token},muteHttpExceptions:true
+    });
+    if (attempt === 0 && (response.getResponseCode() === 401 || response.getResponseCode() === 403)) {
+      token = getSmaregiAccessToken_(true);
+      continue;
+    }
+    break;
+  }
+  if (response.getResponseCode() !== 200) throw new Error('SMAREGI_TRANSACTIONS_HTTP_' + response.getResponseCode());
+  const transactions = JSON.parse(response.getContentText() || '[]');
+  if (!Array.isArray(transactions)) throw new Error('SMAREGI_TRANSACTIONS_INVALID_RESPONSE');
+  const expectedCounts = {};
+  productCodes.forEach(code => expectedCounts[code] = (expectedCounts[code] || 0) + 1);
+  const matched = transactions.find(transaction => {
+    if (String(transaction.cancelDivision == null ? '0' : transaction.cancelDivision) !== '0') return false;
+    if (Number(transaction.total) !== expectedTotal) return false;
+    const counts = {};
+    (Array.isArray(transaction.details) ? transaction.details : []).forEach(detail => {
+      const code = String(detail.productCode || '').trim().toUpperCase();
+      counts[code] = (counts[code] || 0) + Math.max(0, Number(detail.quantity || 0));
+    });
+    return Object.keys(expectedCounts).every(code => counts[code] === expectedCounts[code]);
+  });
+  if (!matched) return {found:false};
+  return {
+    found:true,
+    transactionId:String(matched.transactionHeadId || ''),
+    transactionDateTime:String(matched.transactionDateTime || ''),
+    total:Number(matched.total || 0)
+  };
 }
 
 function facilityPosFetch_(action, requestId, data) {
@@ -296,7 +366,11 @@ function jsonp_(value, callback) {
 function doPost(e) {
   try {
     const body = JSON.parse((e && e.postData && e.postData.contents) || '{}');
-    if (body.op === 'employeeAdminLogin') return json_({ok:true,result:employeeAdminLoginCore_(String(body.password || ''))});
+    if (body.op === 'employeeAdminLogin') return json_({ok:true,result:employeeAdminLoginCore_(String(body.password || ''), String(body.deviceId || ''))});
+    if (body.op === 'androidUi') {
+      requireAndroidDevice_(String(body.deviceId || ''), String(body.deviceToken || ''));
+      return json_({ok:true,result:runUiAction_(String(body.action || ''), body.payload || {}, requiredProperty_('UI_ACCESS_TOKEN'))});
+    }
     requireBridgeSecret_(body.secret || '');
 
     if (body.op === 'result') {
@@ -397,6 +471,11 @@ function enqueueScenario(form, uiToken) {
   if (form.secondaryAction) {
     steps.push({type:'WAIT', ms:waits.betweenPaymentActionsMs});
     steps.push({type:'POINT', name:form.secondaryAction});
+    steps.push({type:'POINT', name:'テンキー5'});
+  }
+  if (form.tertiaryAction) {
+    steps.push({type:'WAIT', ms:waits.betweenPaymentActionsMs});
+    steps.push({type:'POINT', name:form.tertiaryAction});
     steps.push({type:'POINT', name:'テンキー5'});
   }
   if (steps.length > 100) throw new Error('操作数が上限を超えています');
@@ -769,7 +848,7 @@ function employeeAdminLogin(password, uiToken) {
   return employeeAdminLoginCore_(password);
 }
 
-function employeeAdminLoginCore_(password) {
+function employeeAdminLoginCore_(password, deviceId) {
   const cache = CacheService.getScriptCache();
   const attempts = Number(cache.get('EMPLOYEE_ADMIN_FAILED_ATTEMPTS') || 0);
   if (attempts >= 10) throw new Error('ADMIN_LOGIN_LOCKED');
@@ -781,10 +860,32 @@ function employeeAdminLoginCore_(password) {
   cache.remove('EMPLOYEE_ADMIN_FAILED_ATTEMPTS');
   const session = createAdminSession_();
   const baseUrl = property_('ADMIN_UI_BASE_URL', DEFAULT_ADMIN_UI_BASE_URL).replace(/\/$/, '');
-  return {
+  const result = {
     ok:true,
     url:baseUrl + '/admin.html?session=' + encodeURIComponent(session)
   };
+  if (deviceId) result.deviceToken = provisionAndroidDevice_(deviceId);
+  return result;
+}
+
+function provisionAndroidDevice_(deviceId) {
+  const id = String(deviceId || '').trim();
+  if (!/^[0-9A-Za-z_-]{16,80}$/.test(id)) throw new Error('INVALID_ANDROID_DEVICE_ID');
+  const token = Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '');
+  PropertiesService.getScriptProperties().setProperty('ANDROID_DEVICE_' + id, hashToken_(token));
+  return token;
+}
+
+function requireAndroidDevice_(deviceId, token) {
+  const id = String(deviceId || '').trim();
+  if (!/^[0-9A-Za-z_-]{16,80}$/.test(id) || !/^[0-9a-f]{64}$/i.test(String(token || ''))) throw new Error('ANDROID_DEVICE_AUTH_REQUIRED');
+  const expected = property_('ANDROID_DEVICE_' + id, '');
+  if (!safeEqual_(hashToken_(String(token)), expected)) throw new Error('ANDROID_DEVICE_AUTH_REQUIRED');
+}
+
+function hashToken_(token) {
+  const bytes = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(token), Utilities.Charset.UTF_8);
+  return bytes.map(value => ('0' + ((value + 256) % 256).toString(16)).slice(-2)).join('');
 }
 
 function createAdminSession_() {
@@ -1343,7 +1444,8 @@ function requiredPointsFor_(form) {
   if (form.memberCode && form.useForcedNo) names.push('取引検索強制確認いいえボタン');
   if (form.finishAction) names.push(form.finishAction);
   if (form.secondaryAction) names.push(form.secondaryAction);
-  if (form.finishAction || form.secondaryAction) names.push('テンキー5');
+  if (form.tertiaryAction) names.push(form.tertiaryAction);
+  if (form.finishAction || form.secondaryAction || form.tertiaryAction) names.push('テンキー5');
   return Array.from(new Set(names));
 }
 
@@ -1358,6 +1460,7 @@ function validateForm_(form) {
   });
   if (!ALLOWED_FINISH_ACTIONS.includes(form.finishAction || '')) throw new Error('終了操作が不正です');
   if (!ALLOWED_SECONDARY_ACTIONS.includes(form.secondaryAction || '')) throw new Error('追加操作が不正です');
+  if (!ALLOWED_SECONDARY_ACTIONS.includes(form.tertiaryAction || '')) throw new Error('第3操作が不正です');
   if (form.dependsOnJobId && !/^[0-9a-f-]{36}$/i.test(String(form.dependsOnJobId))) throw new Error('依存ジョブIDが不正です');
   if (form.businessKey && !/^[0-9A-Za-z_-]{8,80}$/.test(form.businessKey)) throw new Error('業務キーが不正です');
 }
