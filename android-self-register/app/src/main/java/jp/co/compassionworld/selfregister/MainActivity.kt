@@ -232,6 +232,11 @@ private fun RegisterApp(viewModel: RegisterViewModel = viewModel()) {
                 else -> Unit
             }
         } catch (error: Exception) {
+            android.util.Log.e(
+                "SelfRegister",
+                "checkout step=${state.step::class.simpleName} error=${error.message}",
+                error,
+            )
             viewModel.dispatch(CheckoutAction.Failed(customerErrorMessage(error)))
         }
     }

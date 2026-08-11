@@ -118,7 +118,11 @@ object RegisterApiClient {
         connection.outputStream.use { it.write(request.toString().toByteArray(Charsets.UTF_8)) }
         val stream = if (connection.responseCode in 200..299) connection.inputStream else connection.errorStream
         val root = JSONObject(stream.bufferedReader().use { it.readText() })
-        if (!root.optBoolean("ok")) error(root.optString("error", "REGISTER_API_ERROR"))
+        if (!root.optBoolean("ok")) {
+            val apiError = root.optString("error", "REGISTER_API_ERROR")
+            android.util.Log.e("SelfRegister", "api action=$action error=$apiError")
+            error(apiError)
+        }
         root.optJSONObject("result") ?: JSONObject()
     }
 }
