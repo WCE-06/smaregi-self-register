@@ -142,7 +142,8 @@ window.RegisterBridge = (() => {
     });
   }
 
-  function febbraioCharge(memberCode) { return febbraioCall('febbraioCharge', {memberCode:String(memberCode || '')}, 'getFebbraioCheckoutCharge', [String(memberCode || '')]); }
+  function febbraioCharge(memberCode) { const requestId=createBusinessKey(); return febbraioCall('febbraioCharge', {memberCode:String(memberCode || ''),requestId}, 'checkoutFebbraioFacility', [String(memberCode || ''),requestId]); }
+  function febbraioPayment(sessionId, transactionId) { const requestId=createBusinessKey(); return febbraioCall('febbraioPayment', {sessionId:String(sessionId||''),transactionId:String(transactionId||''),requestId}, 'completeFebbraioFacilityPayment', [{sessionId:String(sessionId||''),transactionId:String(transactionId||''),requestId}]); }
   function keepAlive(businessKey) { return febbraioCall('keepAlive', {businessKey:String(businessKey || '')}, 'enqueueKeepAlive', [String(businessKey || '')]); }
 
   function adminLogin(password) {
@@ -200,6 +201,6 @@ window.RegisterBridge = (() => {
     return normalized;
   }
 
-  return {available, createBusinessKey, readiness, products, member, febbraioCharge, keepAlive, adminLogin, enqueue, cancel, getStatus, watch, customerMessage};
+  return {available, createBusinessKey, readiness, products, member, febbraioCharge, febbraioPayment, keepAlive, adminLogin, enqueue, cancel, getStatus, watch, customerMessage};
 })();
 </script>
