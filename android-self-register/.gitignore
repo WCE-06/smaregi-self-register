@@ -1,0 +1,6 @@
+local.properties
+.gradle/
+.gradle-user/
+.android-user/
+.kotlin/
+**/build/
