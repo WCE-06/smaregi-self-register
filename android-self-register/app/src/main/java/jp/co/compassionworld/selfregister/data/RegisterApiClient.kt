@@ -28,8 +28,11 @@ object RegisterApiClient {
         applicationContext = context.applicationContext
     }
 
-    suspend fun verifyMember(memberCode: String): Boolean =
-        call("member", JSONObject().put("memberCode", memberCode)).optBoolean("found")
+    suspend fun verifyMember(memberCode: String): Boolean {
+        val result = call("member", JSONObject().put("memberCode", memberCode))
+        android.util.Log.i("SelfRegister", "member result=${result.optString("code")} length=${memberCode.length} suffix=${memberCode.takeLast(4)}")
+        return result.optBoolean("found")
+    }
 
     suspend fun checkoutFebbraio(memberCode: String, requestId: String): FebbraioCheckout {
         val result = call("febbraioCharge", JSONObject().put("memberCode", memberCode).put("requestId", requestId))

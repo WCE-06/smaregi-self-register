@@ -371,7 +371,7 @@ private fun MemberScanScreen(onScan: (String) -> Unit) {
                     Text("バーコードリーダーに会員証をかざしてください", color = Forest, fontSize = 18.sp, fontWeight = FontWeight.Bold)
                 }
             }
-            ScannerCapture(minLength = 6, onScan = onScan)
+            ScannerCapture(minLength = 8, onScan = onScan)
             Spacer(Modifier.height(24.dp))
             TextButton(onClick = { onScan("650A0DB2F6") }) { Text("動作確認用に進む", color = Muted) }
         }
@@ -399,8 +399,9 @@ private fun ScannerCapture(minLength: Int, onScan: (String) -> Unit) {
                                 setText("")
                                 onScan(completed)
                             }
-                        // 13桁JANコードの途中送信を防ぎ、リーダーの一連の入力完了を待つ。
-                        }.also { handler.postDelayed(it, 350) }
+                        // Bluetooth/USBリーダーが一時停止しても途中の文字列を送らないよう、
+                        // 一連のキー入力が700ms止まるまで待つ。
+                        }.also { handler.postDelayed(it, 700) }
                     }
                 }
                 requestFocus()
