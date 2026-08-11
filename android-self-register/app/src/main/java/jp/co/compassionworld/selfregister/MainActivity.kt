@@ -3,6 +3,7 @@ package jp.co.compassionworld.selfregister
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.text.InputType
 import android.view.View
 import android.view.WindowManager
 import android.webkit.WebView
@@ -54,6 +55,7 @@ import java.time.DayOfWeek
 import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.ZoneId
+import java.text.Normalizer
 
 private val Forest = Color(0xFF185C43)
 private val Ink = Color(0xFF173229)
@@ -386,6 +388,9 @@ private fun ScannerCapture(minLength: Int, onScan: (String) -> Unit) {
             EditText(context).apply {
                 showSoftInputOnFocus = false
                 isSingleLine = true
+                // 日本語IMEの変換・予測を通さず、バーコードリーダーから届く
+                // 英数字をそのまま受け取る。
+                inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
                 isFocusable = true
                 isFocusableInTouchMode = true
                 alpha = 0f
@@ -396,7 +401,10 @@ private fun ScannerCapture(minLength: Int, onScan: (String) -> Unit) {
                     val code = value?.toString()?.trim().orEmpty()
                     if (code.length >= minLength) {
                         pending = Runnable {
-                            val completed = text?.toString()?.trim().orEmpty()
+                            val completed = Normalizer.normalize(
+                                text?.toString()?.trim().orEmpty(),
+                                Normalizer.Form.NFKC,
+                            ).uppercase()
                             if (completed.length >= minLength) {
                                 setText("")
                                 onScan(completed)

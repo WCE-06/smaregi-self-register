@@ -30,7 +30,11 @@ object RegisterApiClient {
 
     suspend fun verifyMember(memberCode: String): Boolean {
         val result = call("member", JSONObject().put("memberCode", memberCode))
-        android.util.Log.i("SelfRegister", "member result=${result.optString("code")} length=${memberCode.length} suffix=${memberCode.takeLast(4)}")
+        android.util.Log.i(
+            "SelfRegister",
+            "member result=${result.optString("code")} length=${memberCode.length} " +
+                "ascii=${memberCode.all { it in '0'..'9' || it in 'A'..'Z' }} suffix=${memberCode.takeLast(4)}",
+        )
         return result.optBoolean("found")
     }
 
