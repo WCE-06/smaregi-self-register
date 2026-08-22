@@ -152,6 +152,18 @@ function runUiAction_(action, payload, uiToken) {
       case 'smaregiSale':
         result = findSmaregiSale_(payload || {}, uiToken);
         break;
+      case 'mobileOrders':
+        requireUiToken_(uiToken);result = membersOrderFetch_('/api/v1/orders/unpaid?memberCode=' + encodeURIComponent(String(payload.memberCode || '')), 'get');
+        break;
+      case 'mobileOrderLock':
+        requireUiToken_(uiToken);result = membersOrderFetch_('/api/v1/orders/' + encodeURIComponent(String(payload.orderId || '')) + '/payment-lock', 'post', {requestId:String(payload.requestId || ''),deviceId:String(payload.deviceId || '')});
+        break;
+      case 'mobileOrderRelease':
+        requireUiToken_(uiToken);result = membersOrderFetch_('/api/v1/orders/' + encodeURIComponent(String(payload.orderId || '')) + '/payment-lock/release', 'post', payload);
+        break;
+      case 'mobileOrderConfirm':
+        requireUiToken_(uiToken);result = membersOrderFetch_('/api/v1/orders/payment-confirmation', 'post', payload);
+        break;
       case 'keepAlive':
         result = enqueueKeepAlive(String(payload.businessKey || ''), uiToken);
         break;
@@ -215,6 +227,24 @@ function completeFebbraioFacilityPayment(input, uiToken) {
   if (status !== 'PAID') throw new Error('FEBBRAIO_PAYMENT_NOT_CONFIRMED');
   return response;
 }
+
+function membersOrderFetch_(path, method, body) {
+  const properties = PropertiesService.getScriptProperties();
+  const base = String(properties.getProperty('MEMBERS_ORDER_API_URL') || 'https://compassion-world-members-card.combetter27.chatgpt.site').replace(/\/$/, '');
+  const token = requiredProperty_('POS_API_TOKEN');
+  const options = {method:method || 'get',headers:{Authorization:'Bearer ' + token},muteHttpExceptions:true};
+  if (body != null) { options.contentType='application/json';options.payload=JSON.stringify(body); }
+  const response = UrlFetchApp.fetch(base + path, options), status=response.getResponseCode();
+  let data;try{data=JSON.parse(response.getContentText() || '{}')}catch(error){throw new Error('MEMBERS_ORDER_INVALID_RESPONSE')}
+  if (status < 200 || status >= 300) { const failure=new Error(String(data.error || 'MEMBERS_ORDER_HTTP_' + status));failure.details=data;throw failure; }
+  return data;
+}
+
+function getMobileOrders(memberCode, uiToken){requireUiToken_(uiToken);return membersOrderFetch_('/api/v1/orders/unpaid?memberCode=' + encodeURIComponent(String(memberCode || '')), 'get');}
+function lockMobileOrder(input, uiToken){requireUiToken_(uiToken);return membersOrderFetch_('/api/v1/orders/' + encodeURIComponent(String(input.orderId || '')) + '/payment-lock','post',{requestId:String(input.requestId || ''),deviceId:String(input.deviceId || '')});}
+function releaseMobileOrder(input, uiToken){requireUiToken_(uiToken);return membersOrderFetch_('/api/v1/orders/' + encodeURIComponent(String(input.orderId || '')) + '/payment-lock/release','post',input);}
+function confirmMobileOrder(input, uiToken){requireUiToken_(uiToken);return membersOrderFetch_('/api/v1/orders/payment-confirmation','post',input);}
+function findSmaregiSale(input, uiToken){return findSmaregiSale_(input, uiToken);}
 
 function findSmaregiSale_(input, uiToken) {
   requireUiToken_(uiToken);

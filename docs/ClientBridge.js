@@ -143,6 +143,12 @@ window.RegisterBridge = (() => {
 
   function febbraioCharge(memberCode) { return febbraioCall('febbraioCharge', {memberCode:String(memberCode || '')}, 'getFebbraioCheckoutCharge', [String(memberCode || '')]); }
   function keepAlive(businessKey) { return febbraioCall('keepAlive', {businessKey:String(businessKey || '')}, 'enqueueKeepAlive', [String(businessKey || '')]); }
+  function orderCall(action,payload,nativeMethod){if(!available())return Promise.resolve(action==='mobileOrders'?{ok:true,orders:[]}:{});if(!nativeAvailable())return remoteCall(action,payload);return new Promise((resolve,reject)=>{google.script.run.withSuccessHandler(resolve).withFailureHandler(error=>reject(normalizeError(error)))[nativeMethod](payload,GAS_UI_TOKEN)})}
+  function mobileOrders(memberCode){if(nativeAvailable())return new Promise((resolve,reject)=>google.script.run.withSuccessHandler(resolve).withFailureHandler(error=>reject(normalizeError(error))).getMobileOrders(String(memberCode||''),GAS_UI_TOKEN));return orderCall('mobileOrders',{memberCode:String(memberCode||'')},'getMobileOrders')}
+  function mobileOrderLock(input){return orderCall('mobileOrderLock',input,'lockMobileOrder')}
+  function mobileOrderRelease(input){return orderCall('mobileOrderRelease',input,'releaseMobileOrder')}
+  function mobileOrderConfirm(input){return orderCall('mobileOrderConfirm',input,'confirmMobileOrder')}
+  function smaregiSale(input){return orderCall('smaregiSale',input,'findSmaregiSale')}
 
   function adminLogin(password) {
     if (!available()) return Promise.reject(new Error('ADMIN_LOGIN_UNAVAILABLE'));
@@ -199,5 +205,5 @@ window.RegisterBridge = (() => {
     return normalized;
   }
 
-  return {available, createBusinessKey, readiness, products, member, febbraioCharge, keepAlive, adminLogin, enqueue, cancel, getStatus, watch, customerMessage};
+  return {available, createBusinessKey, readiness, products, member, febbraioCharge, keepAlive, mobileOrders, mobileOrderLock, mobileOrderRelease, mobileOrderConfirm, smaregiSale, adminLogin, enqueue, cancel, getStatus, watch, customerMessage};
 })();

@@ -88,6 +88,10 @@ GAS Web UI
 - `SMAREGI_CLIENT_SECRET`
 - `FEBBRAIO_API_URL`
 - `FEBBRAIO_API_TOKEN`
+- `MEMBERS_ORDER_API_URL`（既定値: `https://compassion-world-members-card.combetter27.chatgpt.site`）
+- `POS_API_TOKEN`（会員証システムの同名シークレットと同じ値）
+
+会員証を読み取ると未決済のモバイル注文を自動取得し、5分間の精算ロックを確保します。決済完了ボタンではスマレジ取引を照合して会員証APIへ通知し、キッチンの提供予定確定まで完了してから次のお客様へ戻ります。
 - 操作権限付き公開URL
 
 GitHub PagesのソースにはUIトークンを埋め込みません。テスト時は公開URLの`uiToken`パラメータで渡します。
